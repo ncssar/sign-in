@@ -30,83 +30,246 @@ Config.set('kivy','log_enable',1)
 Config.set('kivy','log_level','info')
 Config.set('kivy','log_maxfiles',5)
 
+import time
+
 import kivy
 kivy.require('1.9.1')
 
 from kivy.app import App
-from kivy.base import runTouchApp
 from kivy.lang import Builder
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.clock import Clock
 
 KV='''
 <MyButton@Button>:
-    text: 'My Button'
-    font_size: '24pt'
+    text: 'My Key'
+    font_size: 32
     on_press: app.keyDown(self.text)
 
-BoxLayout:
-    orientation: 'vertical'
-    Label:
-        id: theLabel
-        text: app.defaultLabelText
+<KeypadScreen>:
     BoxLayout:
-        orientation: 'horizontal'
-        MyButton:
-            text: '7'
-        MyButton:
-            text: '8'
-        MyButton:
-            text: '9'
+        orientation: 'vertical'
+        Label:
+            id: topLabel
+            font_size:28
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
+        BoxLayout:
+            id: buttonRow
+            orientation: 'horizontal'
+            BoxLayout:
+                orientation: 'vertical'
+                Label:
+                    id: isThisYouLabel
+                    font_size: 32
+                    text: 'Is this you?'
+                Label:
+                    id: ifNotLabel
+                    text: '(if not, keep typing)'
+            MyButton:
+                id: yesButton
+                background_color: (0,0,5,1)
+                markup: True
+#                 text: '[size=28][b]  YES[/b][/size]\\n[size=18]Sign me in.[/size]'
+                text: 'YES'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: '1'
+            MyButton:
+                text: '2'
+            MyButton:
+                text: '3'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: '4'
+            MyButton:
+                text: '5'
+            MyButton:
+                text: '6'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: '7'
+            MyButton:
+                text: '8'
+            MyButton:
+                text: '9'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: 'S'
+            MyButton:
+                text: '0'
+            MyButton:
+                text: 'bs'
+<SignInScreen>:
     BoxLayout:
-        orientation: 'horizontal'
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
         MyButton:
-            text: '4'
+            text: 'Sign In Now'
         MyButton:
-            text: '5'
+            text: 'Sign In 30min Ago'
         MyButton:
-            text: '6'
+            text: 'Sign In 60min Ago'
+        MyButton:
+            text: 'Back'
+<SignOutScreen>:
     BoxLayout:
-        orientation: 'horizontal'
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
         MyButton:
-            text: '1'
+            text: 'Sign Out Now'
         MyButton:
-            text: '2'
+            text: 'Sign Out 30min From Now'
         MyButton:
-            text: '3'
+            text: 'Sign Out 60min From Now'
+        MyButton:
+            text: 'Back'
+<ThankyouScreen>:
     BoxLayout:
-        orientation: 'horizontal'
-        MyButton:
-            text: 'S'
-        MyButton:
-            text: '0'
-        MyButton:
-            text: 'bs'
-        
+        orientation: 'vertical'
+        Label:
+            font_size: 24
+            text: 'Thank You'
+        Label:
+            id: nameLabel
+            font_size: 36
+        Label:
+            id: statusLabel
+            font_size: 18
 '''
   
 class signinApp(App):
     def build(self):
-        self.defaultLabelText='Enter your SAR number'
-        self.labelText=self.defaultLabelText
-        self.main_widget=Builder.load_string(KV)
-        return self.main_widget
+        self.defaultNameLabelText='Enter your SAR #'
+        self.typed=''
+        self.roster={}
+        self.roster["35"]="Tom Grundy"
+        self.roster["1S9"]="Sgt. Mike Sullivan"
+        self.roster["1"]="Del Clement"
+        sm.current='keypad'
+        return sm
+
+    def hide(self):
+#         keypad=sm.get_screen(keypad)
+        keypad.ids.topLabel.opacity=0
+        keypad.ids.topLabel.height=0
+        keypad.ids.buttonRow.opacity=0
+        keypad.ids.buttonRow.height=0
+        keypad.ids.nameLabel.text=self.defaultNameLabelText
+
+    def show(self):
+#         keypad=sm.get_screen(keypad)
+        keypad.ids.topLabel.opacity=1
+        keypad.ids.topLabel.height=100
+        keypad.ids.buttonRow.opacity=1
+        keypad.ids.buttonRow.height=100
+        keypad.ids.topLabel.text="You entered: "+self.typed
+#         self.main_widget.ids.yesLabel2.text="Sign me in."
+
+    def switchToBlankKeypad(self,*args):
+        self.typed=''
+        self.hide()
+        sm.current='keypad'
         
     def keyDown(self,text):
-        # if default label text was previously shown, replace it with the button text
-        if self.labelText==self.defaultLabelText:
-            self.labelText=''
-        
-        # process the button text
-        if text=='bs':
-            if len(self.labelText)>0:
-                self.labelText=self.labelText[:-1]
-            if len(self.labelText)==0:
-                self.labelText=self.defaultLabelText
-        else:    
-            self.labelText+=text
-        
-        # show it
-        self.main_widget.ids.theLabel.text=self.labelText
+        print("keyDown called: text="+text)
+        if len(text)<3: # number or code; it must be from the keypad
+            # process the button text
+            if text=='bs':
+                if len(self.typed)>0:
+                    self.typed=self.typed[:-1]
+                    self.show()
+                if len(self.typed)==0:
+                    self.hide()
+            else:    
+                self.typed+=text
+                self.show()
+                        
+            # do the lookup
+            if self.typed in self.roster:
+                keypad.ids.nameLabel.text=self.roster[self.typed]
+                signin.ids.nameLabel.text=self.roster[self.typed]
+                signout.ids.nameLabel.text=self.roster[self.typed]
+            else:
+                if len(self.typed)==0:
+                    self.hide()
+    #                 self.main_widget.ids.nameLabel.text=self.defaultNameLabelText
+                else:
+                    self.show()
+                    keypad.ids.nameLabel.text=""
+        else: # a different button
+            if text=='YES':
+                sm.transition.direction='left'
+                # not yet signed in (or out):
+                if self.typed not in signInDict:
+                    sm.current='signin'
+                # signed in but not yet signed out:
+                if self.typed in signInDict and signInDict[self.typed][1]!=0 and signInDict[self.typed][2]==0:
+                    signout.ids.statusLabel.text="Signed in at "+time.strftime("%H:%M",time.localtime(signInDict[self.typed][1]))
+                    sm.current='signout'
+            elif text=='Back':
+                sm.transition.direction='right'
+                sm.current='keypad'
+            elif text=='Sign In Now':
+                # not yet signed in (or out):
+                if self.typed not in signInDict:
+                    signInDict[self.typed]=[self.roster[self.typed],time.time(),0]
+                    thankyou.ids.statusLabel.text="Signed in at "+time.strftime("%H:%M",time.localtime(signInDict[self.typed][1]))
+                    thankyou.ids.nameLabel.text=self.roster[self.typed]
+                    sm.current='thankyou'
+                    Clock.schedule_once(self.switchToBlankKeypad,2)
+            elif text=='Sign Out Now':
+                # signed in but not yet signed out:
+                if self.typed in signInDict and signInDict[self.typed][2]==0:
+                    inTime=signInDict[self.typed][1]
+                    outTime=time.time()
+                    totalTime=outTime-inTime
+                    signInDict[self.typed][2]=outTime
+                    thankyou.ids.statusLabel.text="Signed in at "+time.strftime("%H:%M",time.localtime(inTime))+"\nSigned out at "+time.strftime("%H:%M",time.localtime(outTime))+"\nTotal time:"+time.strftime("%h hours %m minutes",time.localtime(totalTime))
+                    thankyou.ids.nameLabel.text=self.roster[self.typed]
+                    sm.current='thankyou'
+                    Clock.schedule_once(self.switchToBlankKeypad,2)
+            print(str(signInDict))
+                
+                
+class KeypadScreen(Screen):
+    pass
 
+class SignInScreen(Screen):
+    pass
+
+class SignOutScreen(Screen):
+    pass
+
+class ThankyouScreen(Screen):
+    pass
+
+Builder.load_string(KV)
+sm=ScreenManager()
+sm.add_widget(KeypadScreen(name='keypad'))
+sm.add_widget(SignInScreen(name='signin'))
+sm.add_widget(SignOutScreen(name='signout'))
+sm.add_widget(ThankyouScreen(name='thankyou'))
+keypad=sm.get_screen('keypad')
+signin=sm.get_screen('signin')
+signout=sm.get_screen('signout')
+thankyou=sm.get_screen('thankyou')
+signInDict={}
 
 if __name__ == '__main__':
     signinApp().run()
