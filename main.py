@@ -31,6 +31,7 @@ Config.set('kivy','log_level','info')
 Config.set('kivy','log_maxfiles',5)
 
 import time
+import csv
 
 import kivy
 kivy.require('1.9.1')
@@ -137,8 +138,10 @@ KV='''
             text: 'Sign In Now'
         MyButton:
             text: 'Sign In 30min Ago'
+            opacity: 0.2
         MyButton:
             text: 'Sign In 60min Ago'
+            opacity: 0.2
         MyButton:
             text: 'Back'
 <SignOutScreen>:
@@ -153,8 +156,24 @@ KV='''
             text: 'Sign Out Now'
         MyButton:
             text: 'Sign Out 30min From Now'
+            opacity: 0.2
         MyButton:
             text: 'Sign Out 60min From Now'
+            opacity: 0.2
+        MyButton:
+            text: 'Back'
+<AlreadySignedOutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
+        MyButton:
+            text: 'That must be a mistake; sign me in and out right now.'
+        MyButton:
+            text: 'Sign In Again Now'
         MyButton:
             text: 'Back'
 <ThankyouScreen>:
@@ -202,29 +221,51 @@ class signinApp(App):
     def build(self):
         self.defaultNameLabelText='Enter your SAR #'
         self.typed=''
-        self.roster={}
-        self.roster["35"]="Tom Grundy"
-        self.roster["1S9"]="Sgt. Mike Sullivan"
-        self.roster["1"]="Del Clement"
+        self.readRoster()
         sm.current='keypad'
+        self.switchToBlankKeypad()
         return sm
 
     def hide(self):
 #         keypad=sm.get_screen(keypad)
         keypad.ids.topLabel.opacity=0
         keypad.ids.topLabel.height=0
-        keypad.ids.buttonRow.opacity=0
-        keypad.ids.buttonRow.height=0
+        self.hideButtonRow()
+#         keypad.ids.buttonRow.opacity=0
+#         keypad.ids.buttonRow.height=0
         keypad.ids.nameLabel.text=self.defaultNameLabelText
 
     def show(self):
 #         keypad=sm.get_screen(keypad)
         keypad.ids.topLabel.opacity=1
         keypad.ids.topLabel.height=100
-        keypad.ids.buttonRow.opacity=1
-        keypad.ids.buttonRow.height=100
+        self.showButtonRow()
+#         keypad.ids.buttonRow.opacity=1
+#         keypad.ids.buttonRow.height=100
         keypad.ids.topLabel.text="You entered: "+self.typed
 #         self.main_widget.ids.yesLabel2.text="Sign me in."
+
+    def hideButtonRow(self):
+        print("hideButtonRow called")
+        keypad.ids.buttonRow.opacity=0
+        keypad.ids.buttonRow.height=0
+        
+    def showButtonRow(self):
+        print("showButtonRow called")
+        keypad.ids.buttonRow.opacity=1
+        keypad.ids.buttonRow.height=100
+
+    def readRoster(self):
+        self.roster={}
+        rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
+        with open(rosterFileName,'r') as rosterFile:
+            csvReader=csv.reader(rosterFile)
+            for row in csvReader:
+                print("row:"+str(row[0])+":"+row[1])
+                # if the first token has any digits, add it to the roster
+                if any(i.isdigit() for i in row[0]):
+                    print("  adding")
+                    self.roster[row[0]]=row[1]
 
     def timeStr(self,sec):
         print("calling timeStr:"+str(sec))
@@ -277,16 +318,18 @@ class signinApp(App):
                 self.show()
                         
             # do the lookup
-            if self.typed in self.roster:
+            if self.typed in self.roster: # there is a match
                 keypad.ids.nameLabel.text=self.roster[self.typed]
                 signin.ids.nameLabel.text=self.roster[self.typed]
                 signout.ids.nameLabel.text=self.roster[self.typed]
-            else:
+                self.showButtonRow()
+            else: # no match
                 if len(self.typed)==0:
                     self.hide()
     #                 self.main_widget.ids.nameLabel.text=self.defaultNameLabelText
                 else:
                     self.show()
+                    self.hideButtonRow()
                     keypad.ids.nameLabel.text=""
         else: # a different button
             if text=='YES':
@@ -294,14 +337,17 @@ class signinApp(App):
                 # not yet signed in (or out):
                 if self.typed not in signInDict:
                     sm.current='signin'
-                # signed in but not yet signed out:
-                if self.typed in signInDict and signInDict[self.typed][1]!=0 and signInDict[self.typed][2]==0:
-                    signout.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
-                    sm.current='signout'
+                elif signInDict[self.typed][1]!=0:
+                    if signInDict[self.typed][2]==0: # signed in but not yet signed out
+                        signout.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
+                        sm.current='signout'
+                    else: # already signed out
+                        alreadySignedOut.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
+                        sm.current='alreadySignedOut'                       
             elif text=='Back':
                 sm.transition.direction='right'
                 sm.current='keypad'
-            elif text=='Sign In Now':
+            elif text=='Sign In Now' or text=='Sign In Again Now':
                 # not yet signed in (or out):
                 if self.typed not in signInDict:
                     signInDict[self.typed]=[self.roster[self.typed],time.time(),0,0]
@@ -309,6 +355,8 @@ class signinApp(App):
                     thankyou.ids.nameLabel.text=self.roster[self.typed]
                     sm.current='thankyou'
                     Clock.schedule_once(self.switchToBlankKeypad,2)
+            elif 'in and out' in text:
+                pass
             elif text=='Sign Out Now':
                 # signed in but not yet signed out:
                 if self.typed in signInDict and signInDict[self.typed][2]==0:
@@ -331,6 +379,9 @@ class SignInScreen(Screen):
     pass
 
 class SignOutScreen(Screen):
+    pass
+
+class AlreadySignedOutScreen(Screen):
     pass
 
 class ThankyouScreen(Screen):
