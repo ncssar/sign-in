@@ -187,16 +187,17 @@ KV='''
                 data: [{'text':str(x)} for x in root.nameList]
             MyRV:
                 size_hint_x: 0.15
-                data: [{'text':str(x)} for x in root.timeInList]
+                data: [{'text':x} for x in root.timeInList]
+                
             MyRV:
                 size_hint_x: 0.15
-                data: [{'text':str(x)} for x in root.timeOutList]
+                data: [{'text':x} for x in root.timeOutList]
             MyRV:
                 size_hint_x: 0.15
-                data: [{'text':str(x)} for x in root.totalTimeList]
+                data: [{'text':x} for x in root.totalTimeList]
 
 '''
-  
+
 class signinApp(App):
     def build(self):
         self.defaultNameLabelText='Enter your SAR #'
@@ -225,6 +226,21 @@ class signinApp(App):
         keypad.ids.topLabel.text="You entered: "+self.typed
 #         self.main_widget.ids.yesLabel2.text="Sign me in."
 
+    def timeStr(self,sec):
+        print("calling timeStr:"+str(sec))
+        if isinstance(sec,str): # return strings as-is
+            return sec
+        if sec==0:
+            return "--"
+        if sec<1e6: # assume it's an elapsed / total time
+            t=time.gmtime(sec)
+            if t.tm_hour==0:
+                return time.strftime("%#M min",t)
+            if t.tm_hour==1:
+                return time.strftime("%#H hr %#M min",t)
+            return time.strftime("%#H hrs %#M min",t)
+        return time.strftime("%H:%M",time.localtime(sec))
+    
     def switchToBlankKeypad(self,*args):
         self.typed=''
         self.hide()
@@ -240,9 +256,9 @@ class signinApp(App):
             print("key="+key+"  item="+str(signInDict[key]))
             theList.idList.append(key)
             theList.nameList.append(signInDict[key][0])
-            theList.timeInList.append(signInDict[key][1])
-            theList.timeOutList.append(signInDict[key][2])
-            theList.totalTimeList.append(signInDict[key][3])
+            theList.timeInList.append(self.timeStr(signInDict[key][1]))
+            theList.timeOutList.append(self.timeStr(signInDict[key][2]))
+            theList.totalTimeList.append(self.timeStr(signInDict[key][3]))
         sm.transition.direction='up'
         sm.current='theList'
                     
@@ -280,7 +296,7 @@ class signinApp(App):
                     sm.current='signin'
                 # signed in but not yet signed out:
                 if self.typed in signInDict and signInDict[self.typed][1]!=0 and signInDict[self.typed][2]==0:
-                    signout.ids.statusLabel.text="Signed in at "+time.strftime("%H:%M",time.localtime(signInDict[self.typed][1]))
+                    signout.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
                     sm.current='signout'
             elif text=='Back':
                 sm.transition.direction='right'
@@ -289,7 +305,7 @@ class signinApp(App):
                 # not yet signed in (or out):
                 if self.typed not in signInDict:
                     signInDict[self.typed]=[self.roster[self.typed],time.time(),0,0]
-                    thankyou.ids.statusLabel.text="Signed in at "+time.strftime("%H:%M",time.localtime(signInDict[self.typed][1]))
+                    thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
                     thankyou.ids.nameLabel.text=self.roster[self.typed]
                     sm.current='thankyou'
                     Clock.schedule_once(self.switchToBlankKeypad,2)
@@ -301,9 +317,10 @@ class signinApp(App):
                     totalTime=outTime-inTime
                     signInDict[self.typed][2]=outTime
                     signInDict[self.typed][3]=totalTime
-                    thankyou.ids.statusLabel.text="Signed in at "+time.strftime("%H:%M",time.localtime(inTime))+"\nSigned out at "+time.strftime("%H:%M",time.localtime(outTime))+"\nTotal time:"+time.strftime("%h hours %m minutes",time.localtime(totalTime))
+                    thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
                     thankyou.ids.nameLabel.text=self.roster[self.typed]
                     sm.current='thankyou'
+                    Clock.schedule_once(self.switchToBlankKeypad,3)
             print(str(signInDict))
                 
                 
@@ -322,9 +339,10 @@ class ThankyouScreen(Screen):
 class ListScreen(Screen):
     idList=ListProperty(["id"])
     nameList=ListProperty(["name"])
-    timeInList=ListProperty(["in"])
+    timeInList=ListProperty([])
     timeOutList=ListProperty(["out"])
     totalTimeList=ListProperty(["total"])
+    
 
 Builder.load_string(KV)
 sm=ScreenManager()
