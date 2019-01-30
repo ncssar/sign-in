@@ -172,6 +172,7 @@ KV='''
             id: statusLabel
         MyButton:
             text: 'That must be a mistake; sign me in and out right now.'
+            font_size:18
         MyButton:
             text: 'Sign In Again Now'
         MyButton:
@@ -192,11 +193,12 @@ KV='''
     BoxLayout:
         orientation: 'vertical'
         BoxLayout:
-            height:20
+            size_hint_y: 0.1
             Button:
                 text:'a'
                 on_press:app.switchToBlankKeypad()
         BoxLayout:
+            size_hint_y: 0.9
             MyRV:
                 size_hint_x: 0.1
                 # app.idList (etc) does not seem to work; use root. instead
@@ -342,8 +344,17 @@ class signinApp(App):
                         signout.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
                         sm.current='signout'
                     else: # already signed out
-                        alreadySignedOut.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
-                        sm.current='alreadySignedOut'                       
+                        id=self.typed
+                        prevKeys=[k for k in signInDict.keys() if id+"|" in k] # get all previous entries
+                        prevKeys=[id]+prevKeys # add the original entry as the first element
+                        prevKeys.sort(key=len) # put in chronological order
+                        text=""
+                        for k in prevKeys: # build the full string of all previous sign-in / sign-out pairs
+                            text=text+"Signed in at "+self.timeStr(signInDict[k][1])+"\nSigned out at "+self.timeStr(signInDict[k][2])+"\nTotal time: "+self.timeStr(signInDict[k][3])+"\n"
+#                         alreadySignedOut.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
+                        alreadysignedout.ids.nameLabel.text=self.roster[id]
+                        alreadysignedout.ids.statusLabel.text=text
+                        sm.current='alreadysignedout'                       
             elif text=='Back':
                 sm.transition.direction='right'
                 sm.current='keypad'
@@ -400,11 +411,13 @@ sm=ScreenManager()
 sm.add_widget(KeypadScreen(name='keypad'))
 sm.add_widget(SignInScreen(name='signin'))
 sm.add_widget(SignOutScreen(name='signout'))
+sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
 sm.add_widget(ThankyouScreen(name='thankyou'))
 sm.add_widget(ListScreen(name='theList'))
 keypad=sm.get_screen('keypad')
 signin=sm.get_screen('signin')
 signout=sm.get_screen('signout')
+alreadysignedout=sm.get_screen('alreadysignedout')
 thankyou=sm.get_screen('thankyou')
 theList=sm.get_screen('theList')
 signInDict={}
