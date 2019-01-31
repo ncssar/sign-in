@@ -41,6 +41,7 @@ from kivy.lang import Builder
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.recyclegridlayout import RecycleGridLayout
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 from kivy.properties import ListProperty
 from kivy.clock import Clock
 
@@ -59,12 +60,16 @@ KV='''
         size_hint_y: None
         height: self.minimum_height
         orientation: 'vertical'
-        
+
+<ClockText>:
+
 <KeypadScreen>:
     BoxLayout:
         orientation: 'vertical'
         BoxLayout:
             height:20
+            ClockText:
+                id: clocktext
             Button:
                 text:'a'
                 on_press:app.showList()
@@ -162,21 +167,21 @@ KV='''
             opacity: 0.2
         MyButton:
             text: 'Back'
-<AlreadySignedOutScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        Label:
-            id: nameLabel
-            font_size:36
-        Label:
-            id: statusLabel
-        MyButton:
-            text: 'That must be a mistake; sign me in and out right now.'
-            font_size:18
-        MyButton:
-            text: 'Sign In Again Now'
-        MyButton:
-            text: 'Back'
+# <AlreadySignedOutScreen>:
+#     BoxLayout:
+#         orientation: 'vertical'
+#         Label:
+#             id: nameLabel
+#             font_size:36
+#         Label:
+#             id: statusLabel
+#         MyButton:
+#             text: 'That must be a mistake; sign me in and out right now.'
+#             font_size:18
+#         MyButton:
+#             text: 'Sign In Again Now'
+#         MyButton:
+#             text: 'Back'
 <ThankyouScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -226,6 +231,8 @@ class signinApp(App):
         self.readRoster()
         sm.current='keypad'
         self.switchToBlankKeypad()
+        clocktext=keypad.ids.clocktext
+        Clock.schedule_interval(clocktext.update,1)
         return sm
 
     def hide(self):
@@ -268,6 +275,17 @@ class signinApp(App):
                 if any(i.isdigit() for i in row[0]):
                     print("  adding")
                     self.roster[row[0]]=row[1]
+
+#     def writeCsv(self):
+#         csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
+#         with open(csvFileName,'w') as csvFile:
+#             csvWriter=csv.writer(csvFile)
+#             csvWriter.writerow(["## Event: test"])
+#             csvWriter.writerow(["## File written "+time.strftime("%a %b %d %Y %H:%M:%S")])
+#             csvWriter.writeRow(["ID","Name",""
+#             for entry in self.signInDict:
+#                 csvWriter.writerow(row)
+#             csvWriter.writerow(["## end"])
 
     def timeStr(self,sec):
         print("calling timeStr:"+str(sec))
@@ -343,18 +361,18 @@ class signinApp(App):
                     if signInDict[self.typed][2]==0: # signed in but not yet signed out
                         signout.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
                         sm.current='signout'
-                    else: # already signed out
-                        id=self.typed
-                        prevKeys=[k for k in signInDict.keys() if id+"|" in k] # get all previous entries
-                        prevKeys=[id]+prevKeys # add the original entry as the first element
-                        prevKeys.sort(key=len) # put in chronological order
-                        text=""
-                        for k in prevKeys: # build the full string of all previous sign-in / sign-out pairs
-                            text=text+"Signed in at "+self.timeStr(signInDict[k][1])+"\nSigned out at "+self.timeStr(signInDict[k][2])+"\nTotal time: "+self.timeStr(signInDict[k][3])+"\n"
-#                         alreadySignedOut.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
-                        alreadysignedout.ids.nameLabel.text=self.roster[id]
-                        alreadysignedout.ids.statusLabel.text=text
-                        sm.current='alreadysignedout'                       
+#                     else: # already signed out
+#                         id=self.typed
+#                         prevKeys=[k for k in signInDict.keys() if id+"|" in k] # get all previous entries
+#                         prevKeys=[id]+prevKeys # add the original entry as the first element
+#                         prevKeys.sort(key=len) # put in chronological order
+#                         text=""
+#                         for k in prevKeys: # build the full string of all previous sign-in / sign-out pairs
+#                             text=text+"Signed in at "+self.timeStr(signInDict[k][1])+"\nSigned out at "+self.timeStr(signInDict[k][2])+"\nTotal time: "+self.timeStr(signInDict[k][3])+"\n"
+# #                         alreadySignedOut.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
+#                         alreadysignedout.ids.nameLabel.text=self.roster.[id]
+#                         alreadysignedout.ids.statusLabel.text=text
+#                         sm.current='alreadysignedout'                       
             elif text=='Back':
                 sm.transition.direction='right'
                 sm.current='keypad'
@@ -366,8 +384,8 @@ class signinApp(App):
                     thankyou.ids.nameLabel.text=self.roster[self.typed]
                     sm.current='thankyou'
                     Clock.schedule_once(self.switchToBlankKeypad,2)
-            elif 'in and out' in text:
-                pass
+#             elif 'in and out' in text:
+#                 pass
             elif text=='Sign Out Now':
                 # signed in but not yet signed out:
                 if self.typed in signInDict and signInDict[self.typed][2]==0:
@@ -382,7 +400,12 @@ class signinApp(App):
                     Clock.schedule_once(self.switchToBlankKeypad,3)
             print(str(signInDict))
                 
-                
+
+# clock credit to Yoav Glazner https://stackoverflow.com/a/48850796/3577105
+class ClockText(Label):
+    def update(self,*args):
+        self.text=time.strftime('%H:%M')
+            
 class KeypadScreen(Screen):
     pass
 
@@ -392,8 +415,8 @@ class SignInScreen(Screen):
 class SignOutScreen(Screen):
     pass
 
-class AlreadySignedOutScreen(Screen):
-    pass
+# class AlreadySignedOutScreen(Screen):
+#     pass
 
 class ThankyouScreen(Screen):
     pass
@@ -411,13 +434,13 @@ sm=ScreenManager()
 sm.add_widget(KeypadScreen(name='keypad'))
 sm.add_widget(SignInScreen(name='signin'))
 sm.add_widget(SignOutScreen(name='signout'))
-sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
+# sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
 sm.add_widget(ThankyouScreen(name='thankyou'))
 sm.add_widget(ListScreen(name='theList'))
 keypad=sm.get_screen('keypad')
 signin=sm.get_screen('signin')
 signout=sm.get_screen('signout')
-alreadysignedout=sm.get_screen('alreadysignedout')
+# alreadysignedout=sm.get_screen('alreadysignedout')
 thankyou=sm.get_screen('thankyou')
 theList=sm.get_screen('theList')
 signInDict={}
