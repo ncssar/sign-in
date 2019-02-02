@@ -71,7 +71,10 @@ KV='''
             ClockText:
                 id: clocktext
             Button:
-                text:'a'
+                size_hint: None, None
+                height:64
+                width:64
+                background_normal: 'images/list_64x64_white.png'
                 on_press:app.showList()
         Label:
             id: topLabel
@@ -167,21 +170,21 @@ KV='''
             opacity: 0.2
         MyButton:
             text: 'Back'
-# <AlreadySignedOutScreen>:
-#     BoxLayout:
-#         orientation: 'vertical'
-#         Label:
-#             id: nameLabel
-#             font_size:36
-#         Label:
-#             id: statusLabel
-#         MyButton:
-#             text: 'That must be a mistake; sign me in and out right now.'
-#             font_size:18
-#         MyButton:
-#             text: 'Sign In Again Now'
-#         MyButton:
-#             text: 'Back'
+<AlreadySignedOutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
+        MyButton:
+            text: 'That must be a mistake; sign me in and out right now.'
+            font_size:18
+        MyButton:
+            text: 'Sign In Again Now'
+        MyButton:
+            text: 'Back'
 <ThankyouScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -200,7 +203,10 @@ KV='''
         BoxLayout:
             size_hint_y: 0.1
             Button:
-                text:'a'
+                size_hint: None, None
+                height:64
+                width:64
+                background_normal: 'images/keypad_64x64_white.png'
                 on_press:app.switchToBlankKeypad()
         BoxLayout:
             size_hint_y: 0.9
@@ -263,7 +269,7 @@ class signinApp(App):
         print("showButtonRow called")
         keypad.ids.buttonRow.opacity=1
         keypad.ids.buttonRow.height=100
-
+        
     def readRoster(self):
         self.roster={}
         rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
@@ -283,7 +289,7 @@ class signinApp(App):
 #             csvWriter.writerow(["## Event: test"])
 #             csvWriter.writerow(["## File written "+time.strftime("%a %b %d %Y %H:%M:%S")])
 #             csvWriter.writeRow(["ID","Name",""
-#             for entry in self.signInDict:
+#             for entry in self.signInList:
 #                 csvWriter.writerow(row)
 #             csvWriter.writerow(["## end"])
 
@@ -313,13 +319,13 @@ class signinApp(App):
         theList.timeInList=["In"]
         theList.timeOutList=["Out"]
         theList.totalTimeList=["Total"]
-        for key in signInDict.keys():
-            print("key="+key+"  item="+str(signInDict[key]))
-            theList.idList.append(key)
-            theList.nameList.append(signInDict[key][0])
-            theList.timeInList.append(self.timeStr(signInDict[key][1]))
-            theList.timeOutList.append(self.timeStr(signInDict[key][2]))
-            theList.totalTimeList.append(self.timeStr(signInDict[key][3]))
+        for entry in signInList:
+            print("entry="+str(entry))
+            theList.idList.append(entry[0])
+            theList.nameList.append(entry[1])
+            theList.timeInList.append(self.timeStr(entry[2]))
+            theList.timeOutList.append(self.timeStr(entry[3]))
+            theList.totalTimeList.append(self.timeStr(entry[4]))
         sm.transition.direction='up'
         sm.current='theList'
                     
@@ -352,53 +358,58 @@ class signinApp(App):
                     self.hideButtonRow()
                     keypad.ids.nameLabel.text=""
         else: # a different button
+            id=self.typed
+            name=self.roster[id]
+            ii=[j for j,x in enumerate(signInList) if x[0]==id] # list of indices for the typed ID
+            i=-1
+            entry=[]
+            if len(ii)>0:
+                i=ii[-1] # index of the most recent entry for the typed ID
+            if i>=0:
+                entry=signInList[i] # the actual most recent entry
             if text=='YES':
                 sm.transition.direction='left'
-                # not yet signed in (or out):
-                if self.typed not in signInDict:
+                if entry==[]: # not yet signed in (or out)
                     sm.current='signin'
-                elif signInDict[self.typed][1]!=0:
-                    if signInDict[self.typed][2]==0: # signed in but not yet signed out
-                        signout.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
-                        sm.current='signout'
-#                     else: # already signed out
-#                         id=self.typed
-#                         prevKeys=[k for k in signInDict.keys() if id+"|" in k] # get all previous entries
-#                         prevKeys=[id]+prevKeys # add the original entry as the first element
-#                         prevKeys.sort(key=len) # put in chronological order
-#                         text=""
-#                         for k in prevKeys: # build the full string of all previous sign-in / sign-out pairs
-#                             text=text+"Signed in at "+self.timeStr(signInDict[k][1])+"\nSigned out at "+self.timeStr(signInDict[k][2])+"\nTotal time: "+self.timeStr(signInDict[k][3])+"\n"
-# #                         alreadySignedOut.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
-#                         alreadysignedout.ids.nameLabel.text=self.roster.[id]
-#                         alreadysignedout.ids.statusLabel.text=text
-#                         sm.current='alreadysignedout'                       
+                elif entry[3]==0: # signed in but not signed out
+                    signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[2])
+                    sm.current='signout'
+                else: # already signed out
+                    text=""
+                    for k in ii: # build the full string of all previous sign-in / sign-out pairs
+                        text=text+"In: "+self.timeStr(signInList[k][2])+"   Out: "+self.timeStr(signInList[k][3])+"   Total: "+self.timeStr(signInList[k][4])+"\n"
+                    alreadysignedout.ids.nameLabel.text=name
+                    alreadysignedout.ids.statusLabel.text=text
+                    sm.current='alreadysignedout'
             elif text=='Back':
                 sm.transition.direction='right'
                 sm.current='keypad'
             elif text=='Sign In Now' or text=='Sign In Again Now':
-                # not yet signed in (or out):
-                if self.typed not in signInDict:
-                    signInDict[self.typed]=[self.roster[self.typed],time.time(),0,0]
-                    thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(signInDict[self.typed][1])
-                    thankyou.ids.nameLabel.text=self.roster[self.typed]
-                    sm.current='thankyou'
-                    Clock.schedule_once(self.switchToBlankKeypad,2)
-#             elif 'in and out' in text:
-#                 pass
+                t=time.time()
+                signInList.append([id,name,t,0,0])
+                thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
+                thankyou.ids.nameLabel.text=name
+                sm.current='thankyou'
+                Clock.schedule_once(self.switchToBlankKeypad,2)
+            elif 'in and out' in text:
+                t=time.time()
+                signInList.append([id,name,t,t,1])
+                thankyou.ids.statusLabel.text="Signed in and out at "+self.timeStr(t)
+                thankyou.ids.nameLabel.text=name
+                sm.current='thankyou'
+                Clock.schedule_once(self.switchToBlankKeypad,2)
             elif text=='Sign Out Now':
-                # signed in but not yet signed out:
-                if self.typed in signInDict and signInDict[self.typed][2]==0:
-                    inTime=signInDict[self.typed][1]
+                if entry[3]==0: # signed in but not signed out
+                    inTime=entry[2]
                     outTime=time.time()
                     totalTime=outTime-inTime
-                    signInDict[self.typed][2]=outTime
-                    signInDict[self.typed][3]=totalTime
+                    entry[3]=outTime
+                    entry[4]=totalTime
                     thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
-                    thankyou.ids.nameLabel.text=self.roster[self.typed]
+                    thankyou.ids.nameLabel.text=name
                     sm.current='thankyou'
                     Clock.schedule_once(self.switchToBlankKeypad,3)
-            print(str(signInDict))
+            print(str(signInList))
                 
 
 # clock credit to Yoav Glazner https://stackoverflow.com/a/48850796/3577105
@@ -415,8 +426,8 @@ class SignInScreen(Screen):
 class SignOutScreen(Screen):
     pass
 
-# class AlreadySignedOutScreen(Screen):
-#     pass
+class AlreadySignedOutScreen(Screen):
+    pass
 
 class ThankyouScreen(Screen):
     pass
@@ -434,16 +445,16 @@ sm=ScreenManager()
 sm.add_widget(KeypadScreen(name='keypad'))
 sm.add_widget(SignInScreen(name='signin'))
 sm.add_widget(SignOutScreen(name='signout'))
-# sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
+sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
 sm.add_widget(ThankyouScreen(name='thankyou'))
 sm.add_widget(ListScreen(name='theList'))
 keypad=sm.get_screen('keypad')
 signin=sm.get_screen('signin')
 signout=sm.get_screen('signout')
-# alreadysignedout=sm.get_screen('alreadysignedout')
+alreadysignedout=sm.get_screen('alreadysignedout')
 thankyou=sm.get_screen('thankyou')
 theList=sm.get_screen('theList')
-signInDict={}
+signInList=[]
 
 if __name__ == '__main__':
     signinApp().run()
