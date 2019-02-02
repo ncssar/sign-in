@@ -79,29 +79,32 @@ KV='''
         Label:
             id: topLabel
             font_size:28
-        Label:
-            id: nameLabel
+        MyButton:
+            id: nameButton
+            background_normal:''
             font_size:36
         Label:
             id: statusLabel
-        BoxLayout:
-            id: buttonRow
-            orientation: 'horizontal'
-            BoxLayout:
-                orientation: 'vertical'
-                Label:
-                    id: isThisYouLabel
-                    font_size: 32
-                    text: 'Is this you?'
-                Label:
-                    id: ifNotLabel
-                    text: '(if not, keep typing)'
-            MyButton:
-                id: yesButton
-                background_color: (0,0,5,1)
-                markup: True
-#                 text: '[size=28][b]  YES[/b][/size]\\n[size=18]Sign me in.[/size]'
-                text: 'YES'
+        Label:
+            text: 'Keep typing, or tap your name when you see it.'
+#         BoxLayout:
+#             id: buttonRow
+#             orientation: 'horizontal'
+#             BoxLayout:
+#                 orientation: 'vertical'
+#                 Label:
+#                     id: isThisYouLabel
+#                     font_size: 32
+#                     text: 'Is this you?'
+#                 Label:
+#                     id: ifNotLabel
+#                     text: '(if not, keep typing)'
+#             MyButton:
+#                 id: yesButton
+#                 background_color: (0,0,5,1)
+#                 markup: True
+# #                 text: '[size=28][b]  YES[/b][/size]\\n[size=18]Sign me in.[/size]'
+#                 text: 'YES'
         BoxLayout:
             orientation: 'horizontal'
             MyButton:
@@ -232,7 +235,7 @@ KV='''
 
 class signinApp(App):
     def build(self):
-        self.defaultNameLabelText='Enter your SAR #'
+        self.defaultNameButtonText='Enter your SAR #'
         self.typed=''
         self.readRoster()
         sm.current='keypad'
@@ -245,30 +248,31 @@ class signinApp(App):
 #         keypad=sm.get_screen(keypad)
         keypad.ids.topLabel.opacity=0
         keypad.ids.topLabel.height=0
-        self.hideButtonRow()
+#         self.hideButtonRow()
 #         keypad.ids.buttonRow.opacity=0
 #         keypad.ids.buttonRow.height=0
-        keypad.ids.nameLabel.text=self.defaultNameLabelText
+        keypad.ids.nameButton.text=self.defaultNameButtonText
+        keypad.ids.nameButton.background_color=(0,0,0,0)
 
     def show(self):
 #         keypad=sm.get_screen(keypad)
         keypad.ids.topLabel.opacity=1
         keypad.ids.topLabel.height=100
-        self.showButtonRow()
+#         self.showButtonRow()
 #         keypad.ids.buttonRow.opacity=1
 #         keypad.ids.buttonRow.height=100
         keypad.ids.topLabel.text="You entered: "+self.typed
 #         self.main_widget.ids.yesLabel2.text="Sign me in."
 
-    def hideButtonRow(self):
-        print("hideButtonRow called")
-        keypad.ids.buttonRow.opacity=0
-        keypad.ids.buttonRow.height=0
-        
-    def showButtonRow(self):
-        print("showButtonRow called")
-        keypad.ids.buttonRow.opacity=1
-        keypad.ids.buttonRow.height=100
+#     def hideButtonRow(self):
+#         print("hideButtonRow called")
+#         keypad.ids.buttonRow.opacity=0
+#         keypad.ids.buttonRow.height=0
+#         
+#     def showButtonRow(self):
+#         print("showButtonRow called")
+#         keypad.ids.buttonRow.opacity=1
+#         keypad.ids.buttonRow.height=100
         
     def readRoster(self):
         self.roster={}
@@ -276,10 +280,10 @@ class signinApp(App):
         with open(rosterFileName,'r') as rosterFile:
             csvReader=csv.reader(rosterFile)
             for row in csvReader:
-                print("row:"+str(row[0])+":"+row[1])
+#                 print("row:"+str(row[0])+":"+row[1])
                 # if the first token has any digits, add it to the roster
                 if any(i.isdigit() for i in row[0]):
-                    print("  adding")
+#                     print("  adding")
                     self.roster[row[0]]=row[1]
 
 #     def writeCsv(self):
@@ -345,21 +349,23 @@ class signinApp(App):
                         
             # do the lookup
             if self.typed in self.roster: # there is a match
-                keypad.ids.nameLabel.text=self.roster[self.typed]
+                keypad.ids.nameButton.text=self.roster[self.typed]
+                keypad.ids.nameButton.background_color=(0,0.5,0,1)
                 signin.ids.nameLabel.text=self.roster[self.typed]
                 signout.ids.nameLabel.text=self.roster[self.typed]
-                self.showButtonRow()
+#                 self.showButtonRow()
             else: # no match
                 if len(self.typed)==0:
                     self.hide()
     #                 self.main_widget.ids.nameLabel.text=self.defaultNameLabelText
                 else:
                     self.show()
-                    self.hideButtonRow()
-                    keypad.ids.nameLabel.text=""
+                    keypad.ids.nameButton.background_color=(0,0,0,0)
+#                     self.hideButtonRow()
+                    keypad.ids.nameButton.text=""
         else: # a different button
             id=self.typed
-            name=self.roster[id]
+            name=self.roster.get(id,[])
             ii=[j for j,x in enumerate(signInList) if x[0]==id] # list of indices for the typed ID
             i=-1
             entry=[]
@@ -367,7 +373,7 @@ class signinApp(App):
                 i=ii[-1] # index of the most recent entry for the typed ID
             if i>=0:
                 entry=signInList[i] # the actual most recent entry
-            if text=='YES':
+            if text==name:
                 sm.transition.direction='left'
                 if entry==[]: # not yet signed in (or out)
                     sm.current='signin'
