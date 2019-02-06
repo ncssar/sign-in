@@ -32,6 +32,7 @@ Config.set('kivy','log_maxfiles',5)
 
 import time
 import csv
+import os
 
 import kivy
 kivy.require('1.9.1')
@@ -99,24 +100,6 @@ KV='''
             id: statusLabel
         Label:
             text: 'Keep typing.  Tap your name when you see it.'
-#         BoxLayout:
-#             id: buttonRow
-#             orientation: 'horizontal'
-#             BoxLayout:
-#                 orientation: 'vertical'
-#                 Label:
-#                     id: isThisYouLabel
-#                     font_size: 32
-#                     text: 'Is this you?'
-#                 Label:
-#                     id: ifNotLabel
-#                     text: '(if not, keep typing)'
-#             MyButton:
-#                 id: yesButton
-#                 background_color: (0,0,5,1)
-#                 markup: True
-# #                 text: '[size=28][b]  YES[/b][/size]\\n[size=18]Sign me in.[/size]'
-#                 text: 'YES'
         BoxLayout:
             orientation: 'horizontal'
             MyButton:
@@ -177,8 +160,7 @@ KV='''
             MyButton:
                 text: 'D'
             MyButton:
-                text: 'N'
-                
+                text: 'N'               
 <SignInScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -321,7 +303,7 @@ KV='''
                 on_active: root.eventType='Other'
         BoxLayout:
             size_hint_y: None
-            height: 50
+            height: 40
             Label:
                 text: 'Event Name:'
             TextInput:
@@ -330,13 +312,41 @@ KV='''
                 on_text: root.eventName=self.text
         BoxLayout:
             size_hint_y: None
-            height: 50
+            height: 40
             Label:
                 text: 'Event Location:'
             TextInput:
                 multiline: False
                 id: eventLocationField
                 on_text: root.eventLocation=self.text
+        Label:
+            size_hint: None,None
+            height: 10
+        Label:
+            size_hint_y: None
+            height: 40
+            text: 'No roster file has been loaded.'
+            id: rosterStatusLabel
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Roster Filename:'
+            TextInput:
+                multiline: False
+                id: rosterFileNameField
+                text: root.rosterFileName
+                on_text: root.rosterFileName=self.text
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Roster File Time:'
+            Label:
+                id: rosterTimeLabel
+            Button:
+                text: 'Reload'
+                on_press: app.readRoster()
         Label:
             size_hint_y:0.8
 
@@ -349,6 +359,7 @@ class signinApp(App):
         self.defaultNameButtonText='Enter your SAR #'
         self.typed=''
         self.finalized='NO'
+        details.rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
         self.readRoster()
 #         sm.current='keypad'
         self.startTime=time.time()
@@ -371,15 +382,20 @@ class signinApp(App):
 
     def readRoster(self):
         self.roster={}
-        rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
-        with open(rosterFileName,'r') as rosterFile:
-            csvReader=csv.reader(rosterFile)
-            for row in csvReader:
-#                 print("row:"+str(row[0])+":"+row[1])
-                # if the first token has any digits, add it to the roster
-                if any(i.isdigit() for i in row[0]):
-#                     print("  adding")
-                    self.roster[row[0]]=row[1]
+        try:
+            with open(details.rosterFileName,'r') as rosterFile:
+                details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
+                csvReader=csv.reader(rosterFile)
+                for row in csvReader:
+    #                 print("row:"+str(row[0])+":"+row[1])
+                    # if the first token has any digits, add it to the roster
+                    if any(i.isdigit() for i in row[0]):
+    #                     print("  adding")
+                        self.roster[row[0]]=row[1]
+                details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
+        except:
+            details.ids.rosterStatusLabel.text="Specified roster file is not valid."
+            details.ids.rosterTimeLabel.text=""
 
     def writeCsv(self):
         csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
@@ -573,6 +589,7 @@ class DetailsScreen(Screen):
     eventType=StringProperty("")
     eventName=StringProperty("")
     eventLocation=StringProperty("")
+    rosterFileName=StringProperty("")
     
 
 Builder.load_string(KV)
