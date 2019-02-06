@@ -42,8 +42,11 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.recyclegridlayout import RecycleGridLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
-from kivy.properties import ListProperty
+from kivy.uix.checkbox import CheckBox
+from kivy.properties import ListProperty, StringProperty
 from kivy.clock import Clock
+
+from kivy.logger import Logger
 
 KV='''
 <MyButton@Button>:
@@ -68,6 +71,9 @@ KV='''
         orientation: 'vertical'
         BoxLayout:
             height:20
+            Label:
+                id: headerLabel
+                text: ''
             ClockText:
                 id: clocktext
             Button:
@@ -76,6 +82,12 @@ KV='''
                 width:64
                 background_normal: 'images/list_64x64_white.png'
                 on_press:app.showList()
+            Button:
+                size_hint: None, None
+                height:64
+                width:64
+                background_normal: 'images/more_white.png'
+                on_press:app.showDetails()
         Label:
             id: topLabel
             font_size:28
@@ -86,7 +98,7 @@ KV='''
         Label:
             id: statusLabel
         Label:
-            text: 'Keep typing, or tap your name when you see it.'
+            text: 'Keep typing.  Tap your name when you see it.'
 #         BoxLayout:
 #             id: buttonRow
 #             orientation: 'horizontal'
@@ -132,11 +144,41 @@ KV='''
         BoxLayout:
             orientation: 'horizontal'
             MyButton:
-                text: 'S'
+                text: 'kb'
+                color: (0,0,0,0)
+                Image:
+                    source: 'images/keyboard_white.png'
+                    x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                    y: self.parent.y
+                    height: self.parent.height
             MyButton:
                 text: '0'
             MyButton:
                 text: 'bs'
+                color: (0,0,0,0)
+                Image:
+                    source: 'images/backspace_white.png'
+                    x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                    y: self.parent.y
+                    height: self.parent.height
+        Label:
+            size_hint: None,None
+            height: 5
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: 'T'
+            MyButton:
+                text: 'S'
+            MyButton:
+                text: 'E'
+            MyButton:
+                text: 'P'
+            MyButton:
+                text: 'D'
+            MyButton:
+                text: 'N'
+                
 <SignInScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -205,6 +247,8 @@ KV='''
         orientation: 'vertical'
         BoxLayout:
             size_hint_y: 0.1
+            Label:
+                id: listHeadingLabel
             Button:
                 size_hint: None, None
                 height:64
@@ -230,6 +274,73 @@ KV='''
             MyRV:
                 size_hint_x: 0.15
                 data: [{'text':x} for x in root.totalTimeList]
+<DetailsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Button:
+                size_hint: None, None
+                height:64
+                width:64
+                background_normal: 'images/keypad_64x64_white.png'
+                on_press:app.switchToBlankKeypad()
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Label:
+                text: 'Event Type:'
+            Label:
+                text: 'Meeting'
+                halign: 'right'
+            CheckBox:
+                id: meetingCheckBox
+                group: 'group'
+                on_active: root.eventType='Meeting'
+            Label:
+                text: 'Training'
+                halign: 'right'
+            CheckBox:
+                id: trainingCheckBox
+                group: 'group'
+                on_active: root.eventType='Training'
+            Label:
+                text: 'Search'
+                halign: 'right'
+            CheckBox:
+                id: searchCheckBox
+                group: 'group'
+                on_active: root.eventType='Search'
+            Label:
+                text: 'Other'
+                halign: 'right'
+            CheckBox:
+                id: otherCheckBox
+                group: 'group'
+                on_active: root.eventType='Other'
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Label:
+                text: 'Event Name:'
+            TextInput:
+                multiline: False
+                id: eventNameField
+                on_text: root.eventName=self.text
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Label:
+                text: 'Event Location:'
+            TextInput:
+                multiline: False
+                id: eventLocationField
+                on_text: root.eventLocation=self.text
+        Label:
+            size_hint_y:0.8
+
+            
 
 '''
 
@@ -237,43 +348,27 @@ class signinApp(App):
     def build(self):
         self.defaultNameButtonText='Enter your SAR #'
         self.typed=''
+        self.finalized='NO'
         self.readRoster()
-        sm.current='keypad'
-        self.switchToBlankKeypad()
+#         sm.current='keypad'
+        self.startTime=time.time()
+#         self.switchToBlankKeypad()
         clocktext=keypad.ids.clocktext
         Clock.schedule_interval(clocktext.update,1)
+        sm.current='details'
         return sm
 
     def hide(self):
-#         keypad=sm.get_screen(keypad)
         keypad.ids.topLabel.opacity=0
         keypad.ids.topLabel.height=0
-#         self.hideButtonRow()
-#         keypad.ids.buttonRow.opacity=0
-#         keypad.ids.buttonRow.height=0
         keypad.ids.nameButton.text=self.defaultNameButtonText
         keypad.ids.nameButton.background_color=(0,0,0,0)
 
     def show(self):
-#         keypad=sm.get_screen(keypad)
         keypad.ids.topLabel.opacity=1
         keypad.ids.topLabel.height=100
-#         self.showButtonRow()
-#         keypad.ids.buttonRow.opacity=1
-#         keypad.ids.buttonRow.height=100
         keypad.ids.topLabel.text="You entered: "+self.typed
-#         self.main_widget.ids.yesLabel2.text="Sign me in."
 
-#     def hideButtonRow(self):
-#         print("hideButtonRow called")
-#         keypad.ids.buttonRow.opacity=0
-#         keypad.ids.buttonRow.height=0
-#         
-#     def showButtonRow(self):
-#         print("showButtonRow called")
-#         keypad.ids.buttonRow.opacity=1
-#         keypad.ids.buttonRow.height=100
-        
     def readRoster(self):
         self.roster={}
         rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
@@ -286,19 +381,32 @@ class signinApp(App):
 #                     print("  adding")
                     self.roster[row[0]]=row[1]
 
-#     def writeCsv(self):
-#         csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
-#         with open(csvFileName,'w') as csvFile:
-#             csvWriter=csv.writer(csvFile)
-#             csvWriter.writerow(["## Event: test"])
-#             csvWriter.writerow(["## File written "+time.strftime("%a %b %d %Y %H:%M:%S")])
-#             csvWriter.writeRow(["ID","Name",""
-#             for entry in self.signInList:
-#                 csvWriter.writerow(row)
-#             csvWriter.writerow(["## end"])
+    def writeCsv(self):
+        csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
+        with open(csvFileName,'w') as csvFile:
+            csvWriter=csv.writer(csvFile)
+            csvWriter.writerow(["## NCSSAR Sign-in Sheet"])
+            csvWriter.writerow(["## Event Date and Start Time: "+time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(self.startTime))])
+            csvWriter.writerow(["## Event Name: "+details.ids.eventNameField.text])
+            csvWriter.writerow(["## Event Type: "+details.eventType])
+            csvWriter.writerow(["## Event Location: "+details.eventLocation])
+            csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
+            csvWriter.writerow(["ID","Name","In","Out","Total"])
+            for entry in signInList:
+                # copy in, out, and total seconds to end of list
+                entry.append(entry[2])
+                entry.append(entry[3])
+                entry.append(entry[4])
+                # change entries 2,3,4 to human-readable in case the csv is
+                #  imported to a spreadsheet
+                entry[2]=self.timeStr(entry[2])
+                entry[3]=self.timeStr(entry[3])
+                entry[4]=self.timeStr(entry[4])
+                csvWriter.writerow(entry)
+            csvWriter.writerow(["## end of list; FINALIZED: "+self.finalized])
 
     def timeStr(self,sec):
-        print("calling timeStr:"+str(sec))
+        Logger.info("calling timeStr:"+str(sec))
         if isinstance(sec,str): # return strings as-is
             return sec
         if sec==0:
@@ -313,18 +421,28 @@ class signinApp(App):
         return time.strftime("%H:%M",time.localtime(sec))
     
     def switchToBlankKeypad(self,*args):
+        keypad.ids.headerLabel.text=details.eventType+": "+details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
         self.typed=''
         self.hide()
         sm.current='keypad'
-        
+    
+    def getCurrentlySignedInCount(self,*args):
+        # get the number of entries in signInList that are not signed out
+        return len([x for x in signInList if x[3]==0])
+    
+    def getTotalAttendingCount(self,*Args):
+        # get the number of unique IDs in signInList
+        return len(list(set([x[0] for x in signInList])))
+         
     def showList(self,*args):
+        theList.ids.listHeadingLabel.text=details.eventType+": "+details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
         theList.idList=["ID"]
         theList.nameList=["Name"]
         theList.timeInList=["In"]
         theList.timeOutList=["Out"]
         theList.totalTimeList=["Total"]
         for entry in signInList:
-            print("entry="+str(entry))
+            Logger.info("entry="+str(entry))
             theList.idList.append(entry[0])
             theList.nameList.append(entry[1])
             theList.timeInList.append(self.timeStr(entry[2]))
@@ -332,9 +450,15 @@ class signinApp(App):
             theList.totalTimeList.append(self.timeStr(entry[4]))
         sm.transition.direction='up'
         sm.current='theList'
-                    
+        sm.transition.direction='down'
+
+    def showDetails(self,*args):
+        sm.transition.direction='up'
+        sm.current='details'
+        sm.transition.direction='down'
+        
     def keyDown(self,text):
-        print("keyDown called: text="+text)
+        Logger.info("keyDown called: text="+text)
         if len(text)<3: # number or code; it must be from the keypad
             # process the button text
             if text=='bs':
@@ -343,25 +467,25 @@ class signinApp(App):
                     self.show()
                 if len(self.typed)==0:
                     self.hide()
+            elif text=='kb':
+                Logger.info("keyboard requested")
+                self.writeCsv()
             else:    
                 self.typed+=text
                 self.show()
-                        
+            
             # do the lookup
             if self.typed in self.roster: # there is a match
                 keypad.ids.nameButton.text=self.roster[self.typed]
                 keypad.ids.nameButton.background_color=(0,0.5,0,1)
                 signin.ids.nameLabel.text=self.roster[self.typed]
                 signout.ids.nameLabel.text=self.roster[self.typed]
-#                 self.showButtonRow()
             else: # no match
                 if len(self.typed)==0:
                     self.hide()
-    #                 self.main_widget.ids.nameLabel.text=self.defaultNameLabelText
                 else:
                     self.show()
                     keypad.ids.nameButton.background_color=(0,0,0,0)
-#                     self.hideButtonRow()
                     keypad.ids.nameButton.text=""
         else: # a different button
             id=self.typed
@@ -415,7 +539,7 @@ class signinApp(App):
                     thankyou.ids.nameLabel.text=name
                     sm.current='thankyou'
                     Clock.schedule_once(self.switchToBlankKeypad,3)
-            print(str(signInList))
+            Logger.info(str(signInList))
                 
 
 # clock credit to Yoav Glazner https://stackoverflow.com/a/48850796/3577105
@@ -445,6 +569,11 @@ class ListScreen(Screen):
     timeOutList=ListProperty(["out"])
     totalTimeList=ListProperty(["total"])
     
+class DetailsScreen(Screen):
+    eventType=StringProperty("")
+    eventName=StringProperty("")
+    eventLocation=StringProperty("")
+    
 
 Builder.load_string(KV)
 sm=ScreenManager()
@@ -454,12 +583,14 @@ sm.add_widget(SignOutScreen(name='signout'))
 sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
 sm.add_widget(ThankyouScreen(name='thankyou'))
 sm.add_widget(ListScreen(name='theList'))
+sm.add_widget(DetailsScreen(name='details'))
 keypad=sm.get_screen('keypad')
 signin=sm.get_screen('signin')
 signout=sm.get_screen('signout')
 alreadysignedout=sm.get_screen('alreadysignedout')
 thankyou=sm.get_screen('thankyou')
 theList=sm.get_screen('theList')
+details=sm.get_screen('details')
 signInList=[]
 
 if __name__ == '__main__':
