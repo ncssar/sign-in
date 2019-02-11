@@ -1,0 +1,387 @@
+# #############################################################################
+#
+#  main.kv - Kivy-Language GUI definition for sign-in app
+#
+#  sign-in is developed for Nevada County Sheriff's Search and Rescue
+#    Copyright (c) 2019 Tom Grundy
+#
+#   sign-in (c) 2019 Tom Grundy, using kivy and buildozer
+#
+#  http://github.com/ncssar/sign-in
+#
+#  Contact the author at nccaves@yahoo.com
+#   Attribution, feedback, bug reports and feature requests are appreciated
+#
+# see main.py for revision history
+#
+# #############################################################################
+
+<MyButton@Button>:
+    text: 'My Key'
+    font_size: 32
+    on_press: app.keyDown(self.text)
+
+<MyRV@RecycleView>:
+    viewclass: 'Label'
+    RecycleGridLayout:
+        cols: 1
+        default_size: None, dp(26)
+        default_size_hint: 1, None
+        size_hint_y: None
+        height: self.minimum_height
+        orientation: 'vertical'
+
+<KeypadButton@Button>:
+    size_hint: None, None
+    height:64
+    width:64
+    background_normal: 'images/keypad_64x64_white.png'
+    on_press:app.switchToBlankKeypad()     
+
+<ListButton@Button>:
+    size_hint: None, None
+    height:64
+    width:64
+    background_normal: 'images/list_64x64_white.png'
+    on_press:app.showList()
+
+<DetailsButton@Button>:
+    size_hint: None, None
+    height:64
+    width:64
+    background_normal: 'images/gear_white.png'
+    on_press:app.showDetails()
+
+<SelectableLabel>:
+    # Draw a background to indicate selection
+    canvas.before:
+        Color:
+            rgba: (.0, 0.9, .1, .3) if self.selected else (0, 0, 0, 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+<ClockText>:
+
+<KeypadScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            height:20
+            Label:
+                id: headerLabel
+                text: ''
+            ClockText:
+                id: clocktext
+            ListButton:
+            DetailsButton:
+        Label:
+            id: topLabel
+            font_size:28
+        MyButton:
+            id: nameButton
+            background_normal:''
+            font_size:36
+        Label:
+            id: statusLabel
+        Label:
+            text: 'Keep typing.  Tap your name when you see it.'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: '1'
+            MyButton:
+                text: '2'
+            MyButton:
+                text: '3'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: '4'
+            MyButton:
+                text: '5'
+            MyButton:
+                text: '6'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: '7'
+            MyButton:
+                text: '8'
+            MyButton:
+                text: '9'
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: 'lu'
+                color: (0,0,0,0)
+                Image:
+                    source: 'images/lookup_white.png'
+                    x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                    y: self.parent.y
+                    height: self.parent.height
+            MyButton:
+                text: '0'
+            MyButton:
+                text: 'bs'
+                color: (0,0,0,0)
+                Image:
+                    source: 'images/backspace_white.png'
+                    x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                    y: self.parent.y
+                    height: self.parent.height
+        Label:
+            size_hint: None,None
+            height: 5
+        BoxLayout:
+            orientation: 'horizontal'
+            MyButton:
+                text: 'T'
+            MyButton:
+                text: 'S'
+            MyButton:
+                text: 'E'
+            MyButton:
+                text: 'P'
+            MyButton:
+                text: 'D'
+            MyButton:
+                text: 'N'        
+                       
+<SignInScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
+        MyButton:
+            text: 'Sign In Now'
+        MyButton:
+            text: 'Sign In 30min Ago'
+            opacity: 0.2
+        MyButton:
+            text: 'Sign In 60min Ago'
+            opacity: 0.2
+        MyButton:
+            text: 'Back'
+            
+<SignOutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
+        MyButton:
+            text: 'Sign Out Now'
+        MyButton:
+            text: 'Sign Out 30min From Now'
+            opacity: 0.2
+        MyButton:
+            text: 'Sign Out 60min From Now'
+            opacity: 0.2
+        MyButton:
+            text: 'Back'
+            
+<AlreadySignedOutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: nameLabel
+            font_size:36
+        Label:
+            id: statusLabel
+        MyButton:
+            text: 'That must be a mistake; change my latest sign-out time to right now.'
+            font_size:18
+        MyButton:
+            text: 'Sign In Again Now'
+        MyButton:
+            text: 'Back'
+            
+<ThankyouScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            font_size: 24
+            text: 'Thank You'
+        Label:
+            id: nameLabel
+            font_size: 36
+        Label:
+            id: statusLabel
+            font_size: 18
+            
+<ListScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: 0.1
+            Label:
+                id: listHeadingLabel
+            KeypadButton:
+            DetailsButton:
+        BoxLayout:
+            size_hint_y: 0.9
+            MyRV:
+                size_hint_x: 0.1
+                # app.idList (etc) does not seem to work; use root. instead
+                data: [{'text':str(x)} for x in root.idList]
+            MyRV:
+                size_hint_x: 0.45
+                data: [{'text':str(x)} for x in root.nameList]
+            MyRV:
+                size_hint_x: 0.15
+                data: [{'text':x} for x in root.timeInList]              
+            MyRV:
+                size_hint_x: 0.15
+                data: [{'text':x} for x in root.timeOutList]
+            MyRV:
+                size_hint_x: 0.15
+                data: [{'text':x} for x in root.totalTimeList]
+                
+<LookupScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: 0.1
+            Label:
+                id: listHeadingLabel
+            KeypadButton:
+            DetailsButton:
+        BoxLayout:
+            size_hint_y: 0.9
+#             MyRV:
+#                 size_hint_x: 0.1
+#                 # app.idList (etc) does not seem to work; use root. instead
+#                 data: [{'text':str(x)} for x in root.rosterList]
+            RecycleView:
+                viewclass: 'SelectableLabel'
+                data: [{'text':str(x)} for x in root.rosterList]
+                SelectableRecycleGridLayout:
+                    cols: 1
+                    size_hint_y: None
+                    default_size: None, dp(26)
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    multiselect: False
+                    
+#         cols: 1
+#         default_size: None, dp(26)
+#         default_size_hint: 1, None
+#         size_hint_y: None
+#         height: self.minimum_height
+#         orientation: 'vertical'
+        
+                
+<DetailsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Label:
+                id: detailsHeadingLabel
+            ListButton:
+            KeypadButton:
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            Label:
+                text: 'Event Type:'
+            Label:
+                text: 'Meeting'
+                halign: 'right'
+            CheckBox:
+                id: meetingCheckBox
+                group: 'group'
+                on_active: root.eventType='Meeting'
+            Label:
+                text: 'Training'
+                halign: 'right'
+            CheckBox:
+                id: trainingCheckBox
+                group: 'group'
+                on_active: root.eventType='Training'
+            Label:
+                text: 'Search'
+                halign: 'right'
+            CheckBox:
+                id: searchCheckBox
+                group: 'group'
+                on_active: root.eventType='Search'
+            Label:
+                text: 'Other'
+                halign: 'right'
+            CheckBox:
+                id: otherCheckBox
+                group: 'group'
+                on_active: root.eventType='Other'
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Event Name:'
+            TextInput:
+                multiline: False
+                id: eventNameField
+                on_text: root.eventName=self.text
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Event Location:'
+            TextInput:
+                multiline: False
+                id: eventLocationField
+                on_text: root.eventLocation=self.text
+        Label:
+            size_hint: None,None
+            height: 10
+        Label:
+            size_hint_y: None
+            height: 40
+            text: 'No roster file has been loaded.'
+            id: rosterStatusLabel
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Roster Filename:'
+            TextInput:
+                multiline: False
+                id: rosterFileNameField
+                text: root.rosterFileName
+                on_text: root.rosterFileName=self.text
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Roster File Time:'
+            Label:
+                id: rosterTimeLabel
+            Button:
+                text: 'Reload'
+                on_press: app.readRoster()
+        Label:
+            size_hint: None,None
+            height: 10
+        Button:
+            text: 'Finalize & Export (PDF & CSV)'
+            on_release: app.finalize()
+        Button:
+            text: 'Export (PDF & CSV)'
+            on_release: app.export()
+        Button:
+            text: 'Import CSV'
+            on_release: app.importCsv()
+        Button:
+            text: 'Re-sync'
+            on_release: app.sync()
+        Label:
+            size_hint_y:0.8   
