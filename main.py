@@ -57,6 +57,8 @@ from kivy.logger import Logger
 class signinApp(App):
     def build(self):
         self.gui=Builder.load_file('main.kv')
+        self.adminCode='925'
+        self.adminMode=False
         self.roster={}
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
@@ -77,6 +79,7 @@ class signinApp(App):
         self.details=self.sm.get_screen('details')
         self.signInList=[]
         self.defaultNameButtonText='Enter your SAR #'
+        self.exitAdminMode()
         self.typed=''
         self.finalized='NO'
         self.details.rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
@@ -87,6 +90,27 @@ class signinApp(App):
         self.sm.current='details'
         return self.sm
 
+    def exitAdminMode(self):
+        self.keypad.ids.listbutton.opacity=0
+        self.keypad.ids.listbutton.disabled=True
+        self.keypad.ids.detailsbutton.opacity=0
+        self.keypad.ids.detailsbutton.disabled=True
+        self.typed=""
+        self.keypad.ids.statusLabel.text=""
+        self.hide()
+        self.adminMode=False
+    
+    def enterAdminMode(self):
+        self.keypad.ids.listbutton.opacity=1
+        self.keypad.ids.listbutton.disabled=False
+        self.keypad.ids.detailsbutton.opacity=1
+        self.keypad.ids.detailsbutton.disabled=False
+        self.keypad.ids.nameButton.background_color=(1,0.6,0,1)
+        self.keypad.ids.nameButton.text="Admin Mode"
+        self.keypad.ids.statusLabel.text="(tap above to exit)"
+        self.keypad.ids.topLabel.text=""
+        self.adminMode=True
+    
     def hide(self):
         self.keypad.ids.topLabel.opacity=0
         self.keypad.ids.topLabel.height=0
@@ -198,11 +222,15 @@ class signinApp(App):
         self.sm.transition.direction='up'
         self.sm.current='theList'
         self.sm.transition.direction='down'
+        if self.adminMode:
+            self.exitAdminMode()
 
     def showDetails(self,*args):
         self.sm.transition.direction='up'
         self.sm.current='details'
         self.sm.transition.direction='down'
+        if self.adminMode:
+            self.exitAdminMode()
         
     def showLookup(self,*args):
         self.lookup.rosterList=sorted([str(val)+" : "+str(key) for key,val in self.roster.items()])
@@ -241,9 +269,15 @@ class signinApp(App):
                     self.show()
                     self.keypad.ids.nameButton.background_color=(0,0,0,0)
                     self.keypad.ids.nameButton.text=""
+                if self.typed==self.adminCode:
+                    Logger.info("entering admin mode")
+                    self.enterAdminMode()
+        elif text=="Admin Mode":
+            Logger.info("exiting admin mode")
+            self.exitAdminMode()
         else: # a different button
             id=self.typed
-            name=self.roster.get(id,[])
+            name=self.roster.get(id,"")
             Logger.info("lookup: id="+id+"  name="+name)
             ii=[j for j,x in enumerate(self.signInList) if x[0]==id] # list of indices for the typed ID
             i=-1
