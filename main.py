@@ -33,6 +33,7 @@ Config.set('kivy','log_maxfiles',5)
 import time
 import csv
 import os
+import copy
 
 import kivy
 kivy.require('1.9.1')
@@ -60,6 +61,7 @@ class signinApp(App):
         self.adminCode='925'
         self.adminMode=False
         self.roster={}
+        self.signInList=[]
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
         self.sm.add_widget(SignInScreen(name='signin'))
@@ -77,7 +79,6 @@ class signinApp(App):
         self.theList=self.sm.get_screen('theList')
         self.lookup=self.sm.get_screen('lookup')
         self.details=self.sm.get_screen('details')
-        self.signInList=[]
         self.defaultNameButtonText='Enter your SAR #'
         self.exitAdminMode()
         self.typed=''
@@ -151,7 +152,7 @@ class signinApp(App):
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
             csvWriter.writerow(["ID","Name","In","Out","Total"])
-            for entry in self.signInList:
+            for entry in self.exportList:
                 # copy in, out, and total seconds to end of list
                 entry.append(entry[2])
                 entry.append(entry[3])
@@ -207,18 +208,7 @@ class signinApp(App):
          
     def showList(self,*args):
         self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
-        self.theList.idList=["ID"]
-        self.theList.nameList=["Name"]
-        self.theList.timeInList=["In"]
-        self.theList.timeOutList=["Out"]
-        self.theList.totalTimeList=["Total"]
-        for entry in self.signInList:
-            Logger.info("entry="+str(entry))
-            self.theList.idList.append(entry[0])
-            self.theList.nameList.append(entry[1])
-            self.theList.timeInList.append(self.timeStr(entry[2]))
-            self.theList.timeOutList.append(self.timeStr(entry[3]))
-            self.theList.totalTimeList.append(self.timeStr(entry[4]))
+        self.theList.bigList=[str(x) for entry in self.exportList for x in entry[0:5]]
         self.sm.transition.direction='up'
         self.sm.current='theList'
         self.sm.transition.direction='down'
@@ -317,6 +307,9 @@ class signinApp(App):
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
                 self.thankyou.ids.nameLabel.text=name
                 self.sm.current='thankyou'
+                Logger.info(str(self.signInList))
+                self.exportList=copy.deepcopy(self.signInList)
+                self.writeCsv()
                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'in and out' in text:
                 t=time.time()
@@ -324,6 +317,8 @@ class signinApp(App):
                 self.thankyou.ids.statusLabel.text="Signed in and out at "+self.timeStr(t)
                 self.thankyou.ids.nameLabel.text=name
                 self.sm.current='thankyou'
+                self.exportList=copy.deepcopy(self.signInList)
+                self.writeCsv()
                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
                 inTime=entry[2]
@@ -334,8 +329,11 @@ class signinApp(App):
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
                 self.thankyou.ids.nameLabel.text=name
                 self.sm.current='thankyou'
+                self.exportList=copy.deepcopy(self.signInList)
+                self.writeCsv()
                 Clock.schedule_once(self.switchToBlankKeypad,3)
-#             Logger.info(str(self.signInList))
+            Logger.info(str(self.signInList))
+#             Logger.info(str([{'text':str(x)} for entry in self.signInList for x in entry]))
                 
 
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
@@ -406,6 +404,7 @@ class ListScreen(Screen):
     timeInList=ListProperty([])
     timeOutList=ListProperty(["out"])
     totalTimeList=ListProperty(["total"])
+    bigList=ListProperty([])
 
 class LookupScreen(Screen):
     rosterList=ListProperty(["id"])

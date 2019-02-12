@@ -228,23 +228,50 @@
             KeypadButton:
             DetailsButton:
         BoxLayout:
+            size_hint_y: None
+            height: 30
+            orientation: 'horizontal'
+            Label:
+                text: 'ID'
+            Label:
+                text: 'Name'
+            Label:
+                text: 'Time In'
+            Label:
+                text: 'Time Out'
+            Label:
+                text: 'Total Time'
+        BoxLayout:
             size_hint_y: 0.9
-            MyRV:
-                size_hint_x: 0.1
-                # app.idList (etc) does not seem to work; use root. instead
-                data: [{'text':str(x)} for x in root.idList]
-            MyRV:
-                size_hint_x: 0.45
-                data: [{'text':str(x)} for x in root.nameList]
-            MyRV:
-                size_hint_x: 0.15
-                data: [{'text':x} for x in root.timeInList]              
-            MyRV:
-                size_hint_x: 0.15
-                data: [{'text':x} for x in root.timeOutList]
-            MyRV:
-                size_hint_x: 0.15
-                data: [{'text':x} for x in root.totalTimeList]
+            RecycleView:
+                viewclass: 'SelectableLabel'
+                id: theGrid
+                data: [{'text':str(x)} for x in root.bigList]
+                SelectableRecycleGridLayout:
+                    cols: 5
+                    size_hint_y: None
+                    default_size: None, dp(26)
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    multiselect: False
+#             MyRV:
+#                 size_hint_x: 0.1
+#                 # app.idList (etc) does not seem to work; use root. instead
+#                 data: [{'text':str(x)} for x in root.idList]
+#             MyRV:
+#                 size_hint_x: 0.45
+#                 data: [{'text':str(x)} for x in root.nameList]
+#             MyRV:
+#                 size_hint_x: 0.15
+#                 data: [{'text':x} for x in root.timeInList]              
+#             MyRV:
+#                 size_hint_x: 0.15
+#                 data: [{'text':x} for x in root.timeOutList]
+#             MyRV:
+#                 size_hint_x: 0.15
+#                 data: [{'text':x} for x in root.totalTimeList]
                 
 <LookupScreen>:
     BoxLayout:
