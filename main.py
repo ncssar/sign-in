@@ -92,6 +92,7 @@ class signinApp(App):
         return self.sm
 
     def exitAdminMode(self):
+        Logger.info("Exiting admin mode")
         self.keypad.ids.listbutton.opacity=0
         self.keypad.ids.listbutton.disabled=True
         self.keypad.ids.detailsbutton.opacity=0
@@ -102,6 +103,7 @@ class signinApp(App):
         self.adminMode=False
     
     def enterAdminMode(self):
+        Logger.info("Entering admin mode")
         self.keypad.ids.listbutton.opacity=1
         self.keypad.ids.listbutton.disabled=False
         self.keypad.ids.detailsbutton.opacity=1
@@ -239,6 +241,8 @@ class signinApp(App):
                     self.show()
                 if len(self.typed)==0:
                     self.hide()
+                if self.adminMode:
+                    self.exitAdminMode()
             elif text=='lu':
                 Logger.info("lookup table requested")
                 self.showLookup()
@@ -260,10 +264,11 @@ class signinApp(App):
                     self.keypad.ids.nameButton.background_color=(0,0,0,0)
                     self.keypad.ids.nameButton.text=""
                 if self.typed==self.adminCode:
-                    Logger.info("entering admin mode")
                     self.enterAdminMode()
+                else:
+                    if self.adminMode:
+                        self.exitAdminMode()
         elif text=="Admin Mode":
-            Logger.info("exiting admin mode")
             self.exitAdminMode()
         else: # a different button
             id=self.typed
@@ -349,6 +354,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
     index = None
     selected = BooleanProperty(False)
     selectable = BooleanProperty(True)
+    bg=ListProperty([0,0,0,0])
 
     def refresh_view_attrs(self, rv, index, data):
         ''' Catch and handle the view changes '''
@@ -361,7 +367,22 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
         if super(SelectableLabel, self).on_touch_down(touch):
             return True
         if self.collide_point(*touch.pos) and self.selectable:
-            return self.parent.select_with_touch(self.index, touch)
+            if theApp.sm.current=='theList':
+                colCount=5
+                Logger.info("List item tapped: index="+str(self.index)+":"+str(theApp.theList.ids.theGrid.data[self.index]))
+                rowNum=int(self.index/colCount)
+                bg=theApp.theList.ids.theGrid.data[self.index]['bg']
+                if bg[1]==0:
+                    newBg=(0,0.8,0.1,0.7)
+                else:
+                    newBg=(0,0,0,0)
+                for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
+                    print("i:"+str(i))
+                    theApp.theList.ids.theGrid.data[i]['bg']=newBg
+                theApp.theList.ids.theGrid.refresh_from_data()
+                return True
+            else:
+                return self.parent.select_with_touch(self.index, touch)
 
     def apply_selection(self, rv, index, is_selected):
         ''' Respond to the selection of items in the view. '''
