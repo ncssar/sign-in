@@ -34,6 +34,7 @@ import time
 import csv
 import os
 import copy
+import shutil
 
 import kivy
 kivy.require('1.9.1')
@@ -62,6 +63,7 @@ class signinApp(App):
         self.adminMode=False
         self.roster={}
         self.signInList=[]
+        self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
         self.sm.add_widget(SignInScreen(name='signin'))
@@ -143,9 +145,11 @@ class signinApp(App):
             self.details.ids.rosterTimeLabel.text=""
             Logger.warning(str(e))
 
-    def writeCsv(self):
-        csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
-        with open(csvFileName,'w') as csvFile:
+    def writeCsv(self,rotate=True):
+        # rotate first, since it moves the base file to .bak1
+        if rotate and os.path.isfile(self.csvFileName):
+            self.rotateCsv()
+        with open(self.csvFileName,'w') as csvFile:
             csvWriter=csv.writer(csvFile)
             csvWriter.writerow(["## NCSSAR Sign-in Sheet"])
             csvWriter.writerow(["## Event Date and Start Time: "+time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(self.startTime))])
@@ -167,6 +171,15 @@ class signinApp(App):
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.finalized])
 
+    def rotateCsv(self,depth=5):
+        # move e.g. 4 to 5, then 3 to 4, then 2 to 3, then 1 to 2, then <base> to 1
+        for n in range(depth-1,0,-1):
+            name1=self.csvFileName.replace('.csv','.bak'+str(n)+'.csv')
+            name2=self.csvFileName.replace('.csv','.bak'+str(n+1)+'.csv')
+            if os.path.isfile(name1):
+                shutil.move(name1,name2) # shutil.move will overwrite; os.rename will not
+        shutil.move(self.csvFileName,name1)
+                
     def finalize(self):
         pass
     
@@ -272,6 +285,9 @@ class signinApp(App):
             self.exitAdminMode()
         else: # a different button
             id=self.typed
+            idText=str(id)
+            if id.isdigit():
+                idText="SAR "+str(id)
             name=self.roster.get(id,"")
             Logger.info("lookup: id="+id+"  name="+name)
             ii=[j for j,x in enumerate(self.signInList) if x[0]==id] # list of indices for the typed ID
@@ -285,10 +301,12 @@ class signinApp(App):
                 self.sm.transition.direction='left'
                 if entry==[]: # not yet signed in (or out)
                     self.signin.ids.nameLabel.text=name
+                    self.signin.ids.idLabel.text=idText
                     self.signin.fromLookup=fromLookup
                     self.sm.current='signin'
                 elif entry[3]==0: # signed in but not signed out
                     self.signout.ids.nameLabel.text=name
+                    self.signout.ids.idLabel.text=idText
                     self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[2])
                     self.signout.fromLookup=fromLookup
                     self.sm.current='signout'
@@ -297,6 +315,7 @@ class signinApp(App):
                     for k in ii: # build the full string of all previous sign-in / sign-out pairs
                         text=text+"In: "+self.timeStr(self.signInList[k][2])+"   Out: "+self.timeStr(self.signInList[k][3])+"   Total: "+self.timeStr(self.signInList[k][4])+"\n"
                     self.alreadysignedout.ids.nameLabel.text=name
+                    self.alreadysignedout.ids.idLabel.text=idText
                     self.alreadysignedout.fromLookup=fromLookup
                     self.alreadysignedout.ids.statusLabel.text="You are already signed out:\n"+text
                     self.sm.current='alreadysignedout'
@@ -311,6 +330,7 @@ class signinApp(App):
                 self.signInList.append([id,name,t,0,0])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
                 self.thankyou.ids.nameLabel.text=name
+                self.thankyou.ids.idLabel.text=idText
                 self.sm.current='thankyou'
                 Logger.info(str(self.signInList))
                 self.exportList=copy.deepcopy(self.signInList)
@@ -321,6 +341,7 @@ class signinApp(App):
                 self.signInList.append([id,name,t,t,1])
                 self.thankyou.ids.statusLabel.text="Signed in and out at "+self.timeStr(t)
                 self.thankyou.ids.nameLabel.text=name
+                self.thankyou.ids.idLabel.text=idText
                 self.sm.current='thankyou'
                 self.exportList=copy.deepcopy(self.signInList)
                 self.writeCsv()
@@ -333,6 +354,7 @@ class signinApp(App):
                 entry[4]=totalTime
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
                 self.thankyou.ids.nameLabel.text=name
+                self.thankyou.ids.idLabel.text=idText
                 self.sm.current='thankyou'
                 self.exportList=copy.deepcopy(self.signInList)
                 self.writeCsv()
@@ -377,7 +399,6 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
                 else:
                     newBg=(0,0,0,0)
                 for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
-                    print("i:"+str(i))
                     theApp.theList.ids.theGrid.data[i]['bg']=newBg
                 theApp.theList.ids.theGrid.refresh_from_data()
                 return True
