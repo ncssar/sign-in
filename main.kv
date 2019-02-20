@@ -31,6 +31,19 @@
         height: self.minimum_height
         orientation: 'vertical'
 
+<YesNoSwitch@Switch>:
+    canvas:
+        Color:
+            rgb: 1,1,1
+        Rectangle:
+            source: 'images/switch.jpg'
+            size: sp(83),sp(32)
+            pos: int(self.center_x-sp(41)),int(self.center_y-sp(16))
+        Rectangle:
+            source: 'images/switch_slider.jpg' # make or download your slider jpg
+            size: sp(43), sp(32)
+            pos: int(self.center_x - sp(41) + self.active_norm_pos * sp(41)), int(self.center_y - sp(16))
+            
 <KeypadButton@Button>:
     id: keypadbutton
     size_hint: None, None
@@ -162,6 +175,30 @@
             font_size:24
         Label:
             id: statusLabel
+        BoxLayout: # to be filled by relevant certifications at runtime
+            id: certBox
+            orientation: 'vertical'
+#         BoxLayout:
+#             orientation: 'horizontal'
+#             Label:
+#                 text:'Ready to deploy as K9(Area)?'
+#             Switch:
+#                 canvas:
+#                     Color:
+#                         rgb: 1,1,1
+#                     Rectangle:
+#                         source: 'images/switch.jpg'
+#                         size: sp(83),sp(32)
+#                         pos: int(self.center_x-sp(41)),int(self.center_y-sp(16))
+#                     Rectangle:
+#                         source: 'images/switch_slider.jpg' # make or download your slider jpg
+#                         size: sp(43), sp(32)
+#                         pos: int(self.center_x - sp(41) + self.active_norm_pos * sp(41)), int(self.center_y - sp(16))
+#         BoxLayout:
+#             orientation: 'horizontal'
+#             Label:
+#                 text:'Ready to deploy as Nordic(ski)?'
+#             Switch:
         MyButton:
             text: 'Sign In Now'
         MyButton:
@@ -172,7 +209,31 @@
             opacity: 0.2
         MyButton:
             text: 'Back'
-            
+
+# <SignInTypeScreen>:
+#     BoxLayout:
+#         orientation: 'vertical'
+#         Label:
+#             id: nameLabel
+#             font_size:36
+#         Label:
+#             id: idLabel
+#             font_size:24
+#         Label:
+#             text: 'What resource type(s) are you ready to deploy as (in addition to Ground)?'
+#         RecycleView:
+#             viewclass: 'SelectableLabel'
+#             data: [{'text':str(x)} for x in ["K9 (Area)","K9 (Trailing)","Mounted","Nordic (Ski)"]]
+#             SelectableRecycleGridLayout:
+#                 cols: 1
+#                 size_hint_y: None
+#                 default_size: None, dp(26)
+#                 default_size_hint: 1, None
+#                 size_hint_y: None
+#                 height: self.minimum_height
+#                 orientation: 'vertical'
+#                 multiselect: False
+              
 <SignOutScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -210,7 +271,7 @@
             text: 'That must be a mistake; change my latest sign-out time to right now.'
             font_size:18
         MyButton:
-            text: 'Sign In Again Now'
+            text: 'Sign In Again'
         MyButton:
             text: 'Back'
             
@@ -248,6 +309,8 @@
             Label:
                 text: 'Name'
             Label:
+                text: 'Resource'
+            Label:
                 text: 'Time In'
             Label:
                 text: 'Time Out'
@@ -260,7 +323,8 @@
                 id: theGrid
                 data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.bigList]
                 SelectableRecycleGridLayout:
-                    cols: 5
+                    id: theGridLayout
+                    cols: 6
                     size_hint_y: None
                     default_size: None, dp(26)
                     default_size_hint: 1, None

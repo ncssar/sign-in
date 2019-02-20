@@ -50,6 +50,7 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.recyclegridlayout import RecycleGridLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivy.uix.switch import Switch
 from kivy.uix.checkbox import CheckBox
 from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty,NumericProperty
 from kivy.clock import Clock
@@ -61,12 +62,15 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
+        self.possibleCerts=["K9A","K9T","M","S","K9","DR"]
         self.roster={}
         self.signInList=[]
+        self.exportList=[]
         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
         self.sm.add_widget(SignInScreen(name='signin'))
+#         self.sm.add_widget(SignInTypeScreen(name='signintype'))
         self.sm.add_widget(SignOutScreen(name='signout'))
         self.sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
         self.sm.add_widget(ThankyouScreen(name='thankyou'))
@@ -75,6 +79,7 @@ class signinApp(App):
         self.sm.add_widget(DetailsScreen(name='details'))
         self.keypad=self.sm.get_screen('keypad')
         self.signin=self.sm.get_screen('signin')
+#         self.signintype=self.sm.get_screen('signintype')
         self.signout=self.sm.get_screen('signout')
         self.alreadysignedout=self.sm.get_screen('alreadysignedout')
         self.thankyou=self.sm.get_screen('thankyou')
@@ -87,6 +92,7 @@ class signinApp(App):
         self.finalized='NO'
         self.details.rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
         self.readRoster()
+#         self.setupAlphaGrouping()
         self.startTime=time.time()
         self.clocktext=self.keypad.ids.clocktext
         Clock.schedule_interval(self.clocktext.update,1)
@@ -127,6 +133,10 @@ class signinApp(App):
         self.keypad.ids.topLabel.height=100
         self.keypad.ids.topLabel.text="You entered: "+self.typed
 
+# self.roster is a dictionary: key=ID, val=[name,certifications]
+#  where 'certs' is a string of the format "K9,M,DR," etc as specified in the
+#  master roster document; relevant certifications will result in questions
+#   "are you ready to deploy as <cert>?" during sign-in
     def readRoster(self):
         self.roster={}
         try:
@@ -137,13 +147,62 @@ class signinApp(App):
     #                 print("row:"+str(row[0])+":"+row[1])
                     # if the first token has any digits, add it to the roster
                     if any(i.isdigit() for i in row[0]):
-    #                     print("  adding")
-                        self.roster[row[0]]=row[1]
+                        self.roster[row[0]]=[row[1],row[5]]
                 self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
         except Exception as e:
             self.details.ids.rosterStatusLabel.text="Specified roster file is not valid."
             self.details.ids.rosterTimeLabel.text=""
             Logger.warning(str(e))
+
+    # decide how to optimally split the roster into n roughly-evenly-sized-lists
+    #  grouped on first letters of last names;
+    def setupAlphaGrouping(self,numOfGroups=5):
+        # 1. create a dict whose keys are lowercase letters a thru z, and
+        #     values are lists of all members whose last name starts with
+        #     that letter
+        alphaDict={}
+        for key,val in self.roster.items():
+            first=str(val[0][0]).lower()
+            alphaDict.setdefault(first,[]).append(val[0])
+        # 2. create a 26-element list, each element is the number of folks
+        #     whose last name starts with that ordinal letter
+        letters=list(map(chr,range(97,123)))
+        alphaGroupList=[0]*26
+        for letter in letters:
+            n=ord(letter)-97
+            print("letter:"+letter+" n:"+str(n)+" list:"+str(len(alphaDict.get(letter,[])))+":"+str(alphaDict.get(letter,[])))
+            alphaGroupList[n]=len(alphaDict.get(letter,[]))
+        print("alphaGroupList:"+str(alphaGroupList))
+        # 3. group the letters into numOfGroups groups, such that all the group
+        #     lengths are as close together as possible
+        #     (target group length = total roster length / numOfGroups)
+        target=len(self.roster)/numOfGroups
+        next=0
+#         for groupNum in range(numOfGroups):
+#             groupSize=0
+#             while groupSize<
+
+    def getName(self,id):
+        return self.roster.get(id,"")[0]
+        
+    def getIdText(self,id):
+        idText=str(id)
+        if id.isdigit():
+            idText="SAR "+str(id)
+        return idText
+    
+    def getCerts(self,id):
+        certs=[]
+        if self.roster[id]:
+            # parse the certifications field, using either space or comma as delimiter,
+            #  removing blank strings due to back-to-back delimiters due to loose syntax
+            idCerts=[x for x in self.roster[id][1].replace(' ',',').split(',') if x]
+            Logger.info("roster certs for "+id+":"+str(idCerts)+"  (raw="+str(self.roster[id][1])+")")
+            for possibleCert in self.possibleCerts:
+                if possibleCert in idCerts:
+                    certs.append(possibleCert)
+        Logger.info("Certifications for "+id+":"+str(certs))
+        return certs
 
     def writeCsv(self,rotate=True):
         # rotate first, since it moves the base file to .bak1
@@ -157,17 +216,19 @@ class signinApp(App):
             csvWriter.writerow(["## Event Type: "+self.details.eventType])
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
-            csvWriter.writerow(["ID","Name","In","Out","Total"])
+            csvWriter.writerow(["ID","Name","Resource","In","Out","Total"])
             for entry in self.exportList:
                 # copy in, out, and total seconds to end of list
-                entry.append(entry[2])
                 entry.append(entry[3])
                 entry.append(entry[4])
+                entry.append(entry[5])
                 # change entries 2,3,4 to human-readable in case the csv is
                 #  imported to a spreadsheet
-                entry[2]=self.timeStr(entry[2])
                 entry[3]=self.timeStr(entry[3])
                 entry[4]=self.timeStr(entry[4])
+                entry[5]=self.timeStr(entry[5])
+                # csv apparently knows to wrap the string in quotes only if the
+                #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.finalized])
 
@@ -215,7 +276,7 @@ class signinApp(App):
     
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
-        return len([x for x in self.signInList if x[3]==0])
+        return len([x for x in self.signInList if x[4]==0])
     
     def getTotalAttendingCount(self,*Args):
         # get the number of unique IDs in signInList
@@ -223,7 +284,7 @@ class signinApp(App):
          
     def showList(self,*args):
         self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
-        self.theList.bigList=[str(x) for entry in self.exportList for x in entry[0:5]]
+        self.theList.bigList=[str(x) for entry in self.exportList for x in entry[0:6]]
         self.sm.transition.direction='up'
         self.sm.current='theList'
         self.sm.transition.direction='down'
@@ -238,12 +299,41 @@ class signinApp(App):
             self.exitAdminMode()
         
     def showLookup(self,*args):
-        self.lookup.rosterList=sorted([str(val)+" : "+str(key) for key,val in self.roster.items()])
+        self.lookup.rosterList=sorted([str(val[0])+" : "+str(key) for key,val in self.roster.items()])
 #         Logger.info(str(self.lookup.rosterList))
         self.sm.transition.direction='left'
         self.sm.current='lookup'
         self.sm.transition.direction='right'
-        
+
+    def showSignIn(self,id,fromLookup=False):
+        self.signin.ids.nameLabel.text=self.getName(id)
+        self.signin.ids.idLabel.text=self.getIdText(id)
+        self.signin.fromLookup=fromLookup
+        certs=self.getCerts(id)
+        self.signin.ids.certBox.clear_widgets()
+        for cert in certs:
+            Logger.info("adding certification question for "+cert)
+            certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
+            certLabel=Label(text='Are you ready to deploy as '+cert+'?')
+            certSwitch=YesNoSwitch()
+            certSwitch.cert=cert # pass the cert name as a property of the switch
+    #                         certSwitch.bind(active=self.certSwitchCB)
+            certLayout.add_widget(certLabel)
+            certLayout.add_widget(certSwitch)
+            self.signin.ids.certBox.add_widget(certLayout)
+    #                         buttonsLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
+    #                         self.viewSwitchButton=Button(text='View List\nD.d : 0\nDM.m : 0\nDMS.s : 0')
+    #                 #         self.viewSwitchButton.bind(on_press=self.viewSwitch)
+    #                         buttonsLayout.add_widget(self.viewSwitchButton)
+    #                         goButton=Button(text='Create Markers')
+    #                         goButton.bind(on_press=self.createMarkers)
+    #                         buttonsLayout.add_widget(goButton)
+    #                         self.layout.add_widget(buttonsLayout)
+        self.sm.current='signin'
+#     def certSwitchCB(self,instance,value):
+#         Logger.info("certSwitchCB called:"+str(instance)+":"+str(value))
+#         Logger.info("  cert:"+str(instance.cert))
+     
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text+"  typed="+self.typed)
         if len(text)<3: # number or code; it must be from the keypad
@@ -265,10 +355,10 @@ class signinApp(App):
             
             # do the lookup
             if self.typed in self.roster: # there is a match
-                self.keypad.ids.nameButton.text=self.roster[self.typed]
+                self.keypad.ids.nameButton.text=self.roster[self.typed][0]
                 self.keypad.ids.nameButton.background_color=(0,0.5,0,1)
-                self.signin.ids.nameLabel.text=self.roster[self.typed]
-                self.signout.ids.nameLabel.text=self.roster[self.typed]
+                self.signin.ids.nameLabel.text=self.roster[self.typed][0]
+                self.signout.ids.nameLabel.text=self.roster[self.typed][0]
             else: # no match
                 if len(self.typed)==0:
                     self.hide()
@@ -285,10 +375,11 @@ class signinApp(App):
             self.exitAdminMode()
         else: # a different button
             id=self.typed
-            idText=str(id)
-            if id.isdigit():
-                idText="SAR "+str(id)
-            name=self.roster.get(id,"")
+#             idText=str(id)
+#             if id.isdigit():
+#                 idText="SAR "+str(id)
+#             name=self.roster.get(id,"")[0]
+            name=self.getName(id)
             Logger.info("lookup: id="+id+"  name="+name)
             ii=[j for j,x in enumerate(self.signInList) if x[0]==id] # list of indices for the typed ID
             i=-1
@@ -300,22 +391,43 @@ class signinApp(App):
             if text==name:
                 self.sm.transition.direction='left'
                 if entry==[]: # not yet signed in (or out)
-                    self.signin.ids.nameLabel.text=name
-                    self.signin.ids.idLabel.text=idText
-                    self.signin.fromLookup=fromLookup
-                    self.sm.current='signin'
-                elif entry[3]==0: # signed in but not signed out
-                    self.signout.ids.nameLabel.text=name
-                    self.signout.ids.idLabel.text=idText
-                    self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[2])
+                    self.showSignIn(id,fromLookup)
+#                     self.signin.ids.nameLabel.text=name
+#                     self.signin.ids.idLabel.text=idText
+#                     self.signin.fromLookup=fromLookup
+#                     certs=self.getCerts(id)
+#                     self.signin.ids.certBox.clear_widgets()
+#                     for cert in certs:
+#                         Logger.info("adding certification question for "+cert)
+#                         certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
+#                         certLabel=Label(text='Are you ready to deploy as '+cert+'?')
+#                         certSwitch=Switch()
+#                         certSwitch.cert=cert # pass the cert name as a property of the switch
+# #                         certSwitch.bind(active=self.certSwitchCB)
+#                         certLayout.add_widget(certLabel)
+#                         certLayout.add_widget(certSwitch)
+#                         self.signin.ids.certBox.add_widget(certLayout)
+# #                         buttonsLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
+# #                         self.viewSwitchButton=Button(text='View List\nD.d : 0\nDM.m : 0\nDMS.s : 0')
+# #                 #         self.viewSwitchButton.bind(on_press=self.viewSwitch)
+# #                         buttonsLayout.add_widget(self.viewSwitchButton)
+# #                         goButton=Button(text='Create Markers')
+# #                         goButton.bind(on_press=self.createMarkers)
+# #                         buttonsLayout.add_widget(goButton)
+# #                         self.layout.add_widget(buttonsLayout)
+#                     self.sm.current='signin'
+                elif entry[4]==0: # signed in but not signed out
+                    self.signout.ids.nameLabel.text=self.getName(id)
+                    self.signout.ids.idLabel.text=self.getIdText(id)
+                    self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[3])
                     self.signout.fromLookup=fromLookup
                     self.sm.current='signout'
                 else: # already signed out
                     text=""
                     for k in ii: # build the full string of all previous sign-in / sign-out pairs
-                        text=text+"In: "+self.timeStr(self.signInList[k][2])+"   Out: "+self.timeStr(self.signInList[k][3])+"   Total: "+self.timeStr(self.signInList[k][4])+"\n"
-                    self.alreadysignedout.ids.nameLabel.text=name
-                    self.alreadysignedout.ids.idLabel.text=idText
+                        text=text+"In: "+self.timeStr(self.signInList[k][3])+"   Out: "+self.timeStr(self.signInList[k][4])+"   Total: "+self.timeStr(self.signInList[k][5])+"\n"
+                    self.alreadysignedout.ids.nameLabel.text=self.getName(id)
+                    self.alreadysignedout.ids.idLabel.text=self.getIdText(id)
                     self.alreadysignedout.fromLookup=fromLookup
                     self.alreadysignedout.ids.statusLabel.text="You are already signed out:\n"+text
                     self.sm.current='alreadysignedout'
@@ -325,36 +437,47 @@ class signinApp(App):
                     self.sm.current='lookup'
                 else:
                     self.sm.current='keypad'
-            elif text=='Sign In Now' or text=='Sign In Again Now':
+            elif text=='Sign In Again':
+                self.showSignIn(id)
+            elif text=='Sign In Now':
+                name=self.getName(id)
+                idText=self.getIdText(id)
+#                 self.sm.current='signintype'
                 t=time.time()
-                self.signInList.append([id,name,t,0,0])
+                # get the list of on/enabled ready-to-deploy-as switches
+                #  since objects are always inserted to the front of the children list,
+                #  the actual switch will be .children[0] as long as it was the
+                #  last widget inserted to its certLayout
+                certs=[certLayout.children[0].cert for certLayout in self.signin.ids.certBox.children if certLayout.children[0].active] 
+                Logger.info(id+" "+name+" signed in and is ready to deploy as "+str(certs))
+                self.signInList.append([id,name,','.join(certs),t,0,0])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
-                self.thankyou.ids.nameLabel.text=name
-                self.thankyou.ids.idLabel.text=idText
+                self.thankyou.ids.nameLabel.text=self.getName(id)
+                self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
-                Logger.info(str(self.signInList))
+#                 Logger.info(str(self.signInList))
                 self.exportList=copy.deepcopy(self.signInList)
                 self.writeCsv()
                 Clock.schedule_once(self.switchToBlankKeypad,2)
-            elif 'in and out' in text:
-                t=time.time()
-                self.signInList.append([id,name,t,t,1])
-                self.thankyou.ids.statusLabel.text="Signed in and out at "+self.timeStr(t)
-                self.thankyou.ids.nameLabel.text=name
-                self.thankyou.ids.idLabel.text=idText
-                self.sm.current='thankyou'
-                self.exportList=copy.deepcopy(self.signInList)
-                self.writeCsv()
-                Clock.schedule_once(self.switchToBlankKeypad,2)
+#             elif 'in and out' in text:
+#                 t=time.time()
+#                 self.signInList.append([id,name,t,t,1])
+#                 self.thankyou.ids.statusLabel.text="Signed in and out at "+self.timeStr(t)
+#                 self.thankyou.ids.nameLabel.text=name
+#                 self.thankyou.ids.idLabel.text=idText
+#                 self.sm.current='thankyou'
+#                 self.exportList=copy.deepcopy(self.signInList)
+#                 self.writeCsv()
+#                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
-                inTime=entry[2]
+                inTime=entry[3]
                 outTime=time.time()
                 totalTime=outTime-inTime
-                entry[3]=outTime
-                entry[4]=totalTime
+                entry[4]=outTime
+                entry[5]=totalTime
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
-                self.thankyou.ids.nameLabel.text=name
-                self.thankyou.ids.idLabel.text=idText
+                self.thankyou.ids.nameLabel.text=self.getName(id)
+                self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
                 self.exportList=copy.deepcopy(self.signInList)
                 self.writeCsv()
@@ -390,7 +513,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
             return True
         if self.collide_point(*touch.pos) and self.selectable:
             if theApp.sm.current=='theList':
-                colCount=5
+                colCount=theApp.theList.ids.theGridLayout.cols
                 Logger.info("List item tapped: index="+str(self.index)+":"+str(theApp.theList.ids.theGrid.data[self.index]))
                 rowNum=int(self.index/colCount)
                 bg=theApp.theList.ids.theGrid.data[self.index]['bg']
@@ -424,18 +547,24 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
 class ClockText(Label):
     def update(self,*args):
         self.text=time.strftime('%H:%M')
-            
+
+class YesNoSwitch(Switch):
+    pass
+
 class KeypadScreen(Screen):
     pass
 
 class SignInScreen(Screen):
-    fromLookup=BooleanProperty(False)
+    fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
+
+# class SignInTypeScreen(Screen):
+#     pass
 
 class SignOutScreen(Screen):
-    fromLookup=BooleanProperty(False)
+    fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
 
 class AlreadySignedOutScreen(Screen):
-    fromLookup=BooleanProperty(False)
+    fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
 
 class ThankyouScreen(Screen):
     pass
