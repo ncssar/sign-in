@@ -36,6 +36,12 @@ import os
 import copy
 import shutil
 
+from reportlab.lib import colors,utils
+from reportlab.lib.pagesizes import letter,landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Image, Spacer
+from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
+from reportlab.lib.units import inch
+
 import kivy
 kivy.require('1.9.1')
 
@@ -242,11 +248,132 @@ class signinApp(App):
         shutil.move(self.csvFileName,name1)
                 
     def finalize(self):
-        pass
+        self.finalized=True # should make sure that everyone is signed out first!
+        self.export()
     
     def export(self):
-        pass
-    
+        self.writeCsv()
+        self.writePdf()
+
+#     def writePdfHeaderFooter(self,canvas,doc):
+#         formNameText="Radio Log"
+#         if teams:
+#             if isinstance(teams,str):
+#                 formNameText="Team: "+teams
+#             else:
+#                 formNameText="Team Radio Logs"
+#         canvas.saveState()
+#         styles = getSampleStyleSheet()
+#         self.img=None
+#         if os.path.isfile(self.printLogoFileName):
+#             rprint("valid logo file "+self.printLogoFileName)
+#             imgReader=utils.ImageReader(self.printLogoFileName)
+#             imgW,imgH=imgReader.getSize()
+#             imgAspect=imgH/float(imgW)
+#             self.img=Image(self.printLogoFileName,width=0.54*inch/float(imgAspect),height=0.54*inch)
+#             headerTable=[
+#                     [self.img,self.agencyNameForPrint,"Incident: "+self.incidentName,formNameText+" - Page "+str(canvas.getPageNumber())],
+#                     ["","","Operational Period: "+str(opPeriod),"Printed: "+time.strftime("%a %b %d, %Y  %H:%M")]]
+#             t=Table(headerTable,colWidths=[x*inch for x in [0.8,4.2,2.5,2.5]],rowHeights=[x*inch for x in [0.3,0.3]])
+#             t.setStyle(TableStyle([('FONT',(1,0),(1,1),'Helvetica-Bold'),
+#                                           ('FONT',(2,0),(3,0),'Helvetica-Bold'),
+#                                    ('FONTSIZE',(1,0),(1,1),18),
+#                                           ('SPAN',(0,0),(0,1)),
+#                                           ('SPAN',(1,0),(1,1)),
+#                                           ('LEADING',(1,0),(1,1),20),
+#                                           ('TOPADDING',(1,0),(1,0),0),
+#                                           ('BOTTOMPADDING',(1,1),(1,1),4),
+#                                  ('VALIGN',(0,0),(-1,-1),"MIDDLE"),
+#                                  ('ALIGN',(1,0),(1,-1),"CENTER"),
+#                                           ('ALIGN',(0,0),(0,1),"CENTER"),
+#                                           ('BOX',(0,0),(-1,-1),2,colors.black),
+#                                           ('BOX',(2,0),(-1,-1),2,colors.black),
+#                                           ('INNERGRID',(2,0),(3,1),0.5,colors.black)]))
+#         else:
+#             headerTable=[
+#                     [self.img,self.agencyNameForPrint,"Incident: "+self.incidentName,formNameText+" - Page "+str(canvas.getPageNumber())],
+#                     ["","","Operational Period: ","Printed: "+time.strftime("%a %b %d, %Y  %H:%M")]]
+#             t=Table(headerTable,colWidths=[x*inch for x in [0.0,5,2.5,2.5]],rowHeights=[x*inch for x in [0.3,0.3]])
+#             t.setStyle(TableStyle([('FONT',(1,0),(1,1),'Helvetica-Bold'),
+#                                    ('FONT',(2,0),(3,0),'Helvetica-Bold'),
+#                                    ('FONTSIZE',(1,0),(1,1),18),
+#                                           ('SPAN',(0,0),(0,1)),
+#                                           ('SPAN',(1,0),(1,1)),
+#                                           ('LEADING',(1,0),(1,1),20),
+#                                  ('VALIGN',(1,0),(-1,-1),"MIDDLE"),
+#                                  ('ALIGN',(1,0),(1,-1),"CENTER"),
+#                                           ('BOX',(0,0),(-1,-1),2,colors.black),
+#                                           ('BOX',(2,0),(-1,-1),2,colors.black),
+#                                           ('INNERGRID',(2,0),(3,1),0.5,colors.black)]))
+#         w,h=t.wrapOn(canvas,doc.width,doc.height)
+# #         self.logMsgBox.setInformativeText("Generating page "+str(canvas.getPageNumber()))
+#         QCoreApplication.processEvents()
+#         rprint("Page number:"+str(canvas.getPageNumber()))
+#         rprint("Height:"+str(h))
+#         rprint("Pagesize:"+str(doc.pagesize))
+#         t.drawOn(canvas,doc.leftMargin,doc.pagesize[1]-h-0.5*inch) # enforce a 0.5 inch top margin regardless of paper size
+# ##        canvas.grid([x*inch for x in [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10,10.5,11]],[y*inch for y in [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5]])
+#         rprint("done drawing printLogHeaderFooter canvas")
+#         canvas.restoreState()
+#         rprint("end of printLogHeaderFooter")
+        
+    # optional argument 'teams': if True, generate one pdf of all individual team logs;
+    #  so, this function should be called once to generate the overall log pdf, and
+    #  again with teams=True to generate team logs pdf
+    # if 'teams' is an array of team names, just print those team log(s)
+    def writePdf(self):
+        Logger.info("print job started")
+        pdfName=self.csvFileName.replace(".csv",".pdf")
+        try:
+            f=open(pdfName,"wb")
+        except:
+            Logger.error("writePdf: could not open file for write: "+pdfName)
+            return
+        else:
+            f.close()
+        doc = SimpleDocTemplate(pdfName, pagesize=letter,leftMargin=0.5*inch,rightMargin=0.5*inch,topMargin=1.03*inch,bottomMargin=0.5*inch)
+        elements=[]
+        pdfList=[["ID","Name","Time In","Time Out","Total"]]
+        for entry in self.exportList:
+            pdfList.append([entry[0],entry[1],entry[3],entry[4],entry[5]])
+        t=Table(pdfList,repeatRows=1,colWidths=[x*inch for x in [0.75,3,1.25,1.25,1.5]]) 
+        t.setStyle(TableStyle([('FONT',(0,0),(-1,-1),'Helvetica',16),
+                                ('FONT',(0,0),(-1,0),'Helvetica-Bold',16),
+#                                 ('FONTSIZE',(0,0),(-1,-1),16),
+                                ('ALIGN',(0,0),(-1,-1),'CENTER'),
+                                ('ALIGN',(1,0),(1,-1),'LEFT'),
+                                ('INNERGRID', (0,0), (-1,-1), 1, colors.black),
+                                ('BOX', (0,0), (-1,-1), 1, colors.black),
+                                ('BOX', (0,0), (-1,0), 2, colors.black)]))
+
+#         for team in teamFilterList:
+#             extTeamNameLower=getExtTeamName(team).lower()
+#             radioLogPrint=[]
+#             styles = getSampleStyleSheet()
+#             radioLogPrint.append(MyTableModel.header_labels[0:6])
+#             for row in self.radioLog:
+#                 opStartRow=False
+#                 if row[3].startswith("Radio Log Begins:"):
+#                     opStartRow=True
+#                 if row[3].startswith("Operational Period") and row[3].split()[3] == "Begins:":
+#                     opStartRow=True
+#                     entryOpPeriod=int(row[3].split()[2])
+#                 if entryOpPeriod == opPeriod:
+#                     if team=="" or extTeamNameLower==getExtTeamName(row[2]).lower() or opStartRow: # filter by team name if argument was specified
+#                         radioLogPrint.append([row[0],row[1],row[2],Paragraph(row[3],styles['Normal']),Paragraph(row[4],styles['Normal']),Paragraph(row[5],styles['Normal'])])
+#             if not teams or len(radioLogPrint)>2: # don't make a table for teams that have no entries during the requested op period
+#                 t=Table(radioLogPrint,repeatRows=1,colWidths=[x*inch for x in [0.5,0.6,1.25,5.5,1.25,0.9]])
+#                 t.setStyle(TableStyle([('FONT',(0,0),(-1,-1),'Helvetica'),
+#                                         ('FONT',(0,0),(-1,1),'Helvetica-Bold'),
+#                                         ('INNERGRID', (0,0), (-1,-1), 0.25, colors.black),
+#                                        ('BOX', (0,0), (-1,-1), 2, colors.black),
+#                                        ('BOX', (0,0), (5,0), 2, colors.black)]))
+#                 elements.append(t)
+#         doc.build(elements,onFirstPage=functools.partial(self.writePdfHeaderFooter),onLaterPages=functools.partial(self.writePdfHeaderFooter))         
+        elements.append(t)
+        doc.build(elements)
+        Logger.info("print job completed")
+        
     def importCsv(self):
         pass
     
