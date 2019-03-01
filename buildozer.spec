@@ -13,7 +13,7 @@ package.domain = org.test
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,csv
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
@@ -42,7 +42,7 @@ version.filename = %(source.dir)s/main.py
 #  same-line comments appear in the python3 call like so:
 # Run '/usr/bin/python3 -m pythonforandroid.toolchain create --dist_name=buckshotApp --bootstrap=sdl2 --requirements=python3,kivy,pyjnius # for download-only test --arch armeabi-v7a --copy-libs --color=always --storage-dir="/mnt/c/Users/caver/Documents/GitHub/buckshotApp/.buildozer/android/platform/build"'
 ##################################################
-requirements = python3,kivy
+requirements = python3,kivy,pyjnius,jnius
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -91,7 +91,7 @@ fullscreen = 0
 #android.presplash_color = #FFFFFF
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
 # (int) Android API to use
 android.api = 26

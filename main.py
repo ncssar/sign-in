@@ -36,11 +36,11 @@ import os
 import copy
 import shutil
 
-from reportlab.lib import colors,utils
-from reportlab.lib.pagesizes import letter,landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Image, Spacer
-from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
-from reportlab.lib.units import inch
+# from reportlab.lib import colors,utils
+# from reportlab.lib.pagesizes import letter,landscape
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Image, Spacer
+# from reportlab.lib.styles import getSampleStyleSheet,ParagraphStyle
+# from reportlab.lib.units import inch
 
 import kivy
 kivy.require('1.9.1')
@@ -60,11 +60,16 @@ from kivy.uix.switch import Switch
 from kivy.uix.checkbox import CheckBox
 from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty,NumericProperty
 from kivy.clock import Clock
+from kivy.utils import platform
 
 from kivy.logger import Logger
 
+from jnius import cast
+from jnius import autoclass
+
 class signinApp(App):
     def build(self):
+        Logger.info("build starting...")
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
@@ -72,7 +77,20 @@ class signinApp(App):
         self.roster={}
         self.signInList=[]
         self.exportList=[]
-        self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
+#         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
+        if platform in ('windows'):
+            self.downloadDir=os.path.join(os.path.expanduser('~'),"Downloads")
+            self.rosterDir=self.downloadsDir
+            self.csvDir=self.rosterDir
+        else:
+#             self.rosterDir="/storage/emulated/0/Download"
+            self.downloadDir="/storage/emulated/0/Download"
+            self.csvDir=os.path.dirname(os.path.abspath(__file__))
+            self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
+        self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
+        self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
+        self.printLogoFileName="images/logo.jpg"
+        self.agencyNameForPrint="NEVADA COUNTY SHERIFF'S SEARCH AND RESCUE"
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
         self.sm.add_widget(SignInScreen(name='signin'))
@@ -96,7 +114,7 @@ class signinApp(App):
         self.exitAdminMode()
         self.typed=''
         self.finalized='NO'
-        self.details.rosterFileName="C:\\Users\\caver\\Downloads\\roster.csv"
+        self.details.rosterFileName=self.rosterFileName
         self.readRoster()
 #         self.setupAlphaGrouping()
         self.startTime=time.time()
@@ -146,14 +164,24 @@ class signinApp(App):
     def readRoster(self):
         self.roster={}
         try:
-            with open(self.details.rosterFileName,'r') as rosterFile:
-                self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
+            Logger.info("reading roster file:"+self.details.rosterFileName)
+            # on android, default encoding (utf-8) resulted in failure to read roster
+            #  with the following error after opening but before the first row is read:
+            # [WARNING] 'utf-8' codec can't decode byte 0xb4 in position 736: invalid start byte
+            #  (0xb4 is a grave accent which appears in one member's name)
+            #  changing to latin-1 solved it in this case, but a better catch-all solution
+            #  is probably to use default encoding with a better 'errors' argument:
+#             with open(self.details.rosterFileName,'r',encoding='latin-1') as rosterFile:
+            with open(self.details.rosterFileName,'r',errors='ignore') as rosterFile:
+#                 self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
                 csvReader=csv.reader(rosterFile)
+                Logger.info("opened...")
                 for row in csvReader:
-    #                 print("row:"+str(row[0])+":"+row[1])
+#                     Logger.info("row:"+str(row[0])+":"+row[1])
                     # if the first token has any digits, add it to the roster
                     if any(i.isdigit() for i in row[0]):
                         self.roster[row[0]]=[row[1],row[5]]
+                        Logger.info("adding:"+str(self.roster[row[0]]))
                 self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
         except Exception as e:
             self.details.ids.rosterStatusLabel.text="Specified roster file is not valid."
@@ -210,11 +238,38 @@ class signinApp(App):
         Logger.info("Certifications for "+id+":"+str(certs))
         return certs
 
-    def writeCsv(self,rotate=True):
+    def downloadFile(self,filename,mimetype):
+        path=self.downloadDir+"/"+os.path.basename(filename)
+        Logger.info("Downloading i.e. copying from "+filename+" to "+path)
+        Environment=autoclass('android.os.Environment')
+        PythonActivity=autoclass('org.kivy.android.PythonActivity')
+        mActivity=PythonActivity.mActivity
+        Context=autoclass('android.content.Context')
+        DownloadManager=autoclass('android.app.DownloadManager')
+        try:
+            shutil.copy(filename,path)
+        except PermissionError as ex:
+            Logger.warning("Could not write file "+path+":")
+            Logger.warning(ex)
+            PythonActivity.toastError("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
+            PythonActivity.toastError("File not written: "+str(ex))
+        except Exception as ex:
+            Logger.warning("Could not write file "+path+":")
+            Logger.warning(ex)
+            PythonActivity.toastError("File not written: "+str(ex))
+        else:
+            Logger.info("Download successful")
+            DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
+            DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
+            PythonActivity.toastError("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
+        
+    def writeCSV(self,rotate=True,download=False):
         # rotate first, since it moves the base file to .bak1
+        Logger.info("writeCSV called")
         if rotate and os.path.isfile(self.csvFileName):
-            self.rotateCsv()
+            self.rotateCSV()
         with open(self.csvFileName,'w') as csvFile:
+            Logger.info("csv file "+self.csvFileName+" opened")
             csvWriter=csv.writer(csvFile)
             csvWriter.writerow(["## NCSSAR Sign-in Sheet"])
             csvWriter.writerow(["## Event Date and Start Time: "+time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(self.startTime))])
@@ -237,9 +292,12 @@ class signinApp(App):
                 #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.finalized])
+        if download and os.path.isfile(self.csvFileName):
+            self.downloadFile(self.csvFileName,"text/csv")
 
-    def rotateCsv(self,depth=5):
+    def rotateCSV(self,depth=5):
         # move e.g. 4 to 5, then 3 to 4, then 2 to 3, then 1 to 2, then <base> to 1
+        Logger.info("rotateCSV called")
         for n in range(depth-1,0,-1):
             name1=self.csvFileName.replace('.csv','.bak'+str(n)+'.csv')
             name2=self.csvFileName.replace('.csv','.bak'+str(n+1)+'.csv')
@@ -252,129 +310,126 @@ class signinApp(App):
         self.export()
     
     def export(self):
-        self.writeCsv()
-        self.writePdf()
-
-#     def writePdfHeaderFooter(self,canvas,doc):
-#         formNameText="Radio Log"
-#         if teams:
-#             if isinstance(teams,str):
-#                 formNameText="Team: "+teams
-#             else:
-#                 formNameText="Team Radio Logs"
+        self.writeCSV(download=True)
+        self.writePDF(download=True)
+        
+#     def writePDFHeaderFooter(self,canvas,doc):
 #         canvas.saveState()
 #         styles = getSampleStyleSheet()
 #         self.img=None
+#         printInfoText="NOT FINALIZED"
+#         if self.finalized:
+#             printInfoText="Total attending: "+str(self.getTotalAttendingCount())
 #         if os.path.isfile(self.printLogoFileName):
-#             rprint("valid logo file "+self.printLogoFileName)
+# #             rprint("valid logo file "+self.printLogoFileName)
 #             imgReader=utils.ImageReader(self.printLogoFileName)
 #             imgW,imgH=imgReader.getSize()
 #             imgAspect=imgH/float(imgW)
 #             self.img=Image(self.printLogoFileName,width=0.54*inch/float(imgAspect),height=0.54*inch)
 #             headerTable=[
-#                     [self.img,self.agencyNameForPrint,"Incident: "+self.incidentName,formNameText+" - Page "+str(canvas.getPageNumber())],
-#                     ["","","Operational Period: "+str(opPeriod),"Printed: "+time.strftime("%a %b %d, %Y  %H:%M")]]
-#             t=Table(headerTable,colWidths=[x*inch for x in [0.8,4.2,2.5,2.5]],rowHeights=[x*inch for x in [0.3,0.3]])
-#             t.setStyle(TableStyle([('FONT',(1,0),(1,1),'Helvetica-Bold'),
-#                                           ('FONT',(2,0),(3,0),'Helvetica-Bold'),
-#                                    ('FONTSIZE',(1,0),(1,1),18),
-#                                           ('SPAN',(0,0),(0,1)),
-#                                           ('SPAN',(1,0),(1,1)),
-#                                           ('LEADING',(1,0),(1,1),20),
-#                                           ('TOPADDING',(1,0),(1,0),0),
-#                                           ('BOTTOMPADDING',(1,1),(1,1),4),
-#                                  ('VALIGN',(0,0),(-1,-1),"MIDDLE"),
-#                                  ('ALIGN',(1,0),(1,-1),"CENTER"),
-#                                           ('ALIGN',(0,0),(0,1),"CENTER"),
-#                                           ('BOX',(0,0),(-1,-1),2,colors.black),
-#                                           ('BOX',(2,0),(-1,-1),2,colors.black),
-#                                           ('INNERGRID',(2,0),(3,1),0.5,colors.black)]))
-#         else:
-#             headerTable=[
-#                     [self.img,self.agencyNameForPrint,"Incident: "+self.incidentName,formNameText+" - Page "+str(canvas.getPageNumber())],
-#                     ["","","Operational Period: ","Printed: "+time.strftime("%a %b %d, %Y  %H:%M")]]
-#             t=Table(headerTable,colWidths=[x*inch for x in [0.0,5,2.5,2.5]],rowHeights=[x*inch for x in [0.3,0.3]])
-#             t.setStyle(TableStyle([('FONT',(1,0),(1,1),'Helvetica-Bold'),
-#                                    ('FONT',(2,0),(3,0),'Helvetica-Bold'),
-#                                    ('FONTSIZE',(1,0),(1,1),18),
-#                                           ('SPAN',(0,0),(0,1)),
-#                                           ('SPAN',(1,0),(1,1)),
-#                                           ('LEADING',(1,0),(1,1),20),
-#                                  ('VALIGN',(1,0),(-1,-1),"MIDDLE"),
-#                                  ('ALIGN',(1,0),(1,-1),"CENTER"),
-#                                           ('BOX',(0,0),(-1,-1),2,colors.black),
-#                                           ('BOX',(2,0),(-1,-1),2,colors.black),
-#                                           ('INNERGRID',(2,0),(3,1),0.5,colors.black)]))
+#                     [self.img,self.agencyNameForPrint],
+#                     ["Event Sign In List","Event Name: "+self.details.ids.eventNameField.text,"Event Type: "+self.details.eventType,"Event Date: "+"12345"],
+#                     ["Start Time: "+"54321","Printed at: "+time.strftime("%a %b %d, %Y  %H:%M"),printInfoText]]
+#             t=Table(headerTable,colWidths=[x*inch for x in [2,2,1.75,1.75]],rowHeights=[x*inch for x in [1.6,1.3,1.3]])
+#             t.setStyle(TableStyle([('FONT',(1,0),(1,0),'Helvetica-Bold',18),
+# #                                           ('FONT',(2,0),(3,0),'Helvetica-Bold'),
+# #                                    ('FONTSIZE',(1,0),(1,1),18),
+# #                                           ('SPAN',(0,0),(0,1)),
+# #                                           ('SPAN',(1,0),(1,1)),
+# #                                           ('LEADING',(1,0),(1,1),20),
+# #                                           ('TOPADDING',(1,0),(1,0),0),
+# #                                           ('BOTTOMPADDING',(1,1),(1,1),4),
+#                                 ('VALIGN',(0,0),(-1,-1),"MIDDLE"),
+#                                 ('ALIGN',(1,0),(1,-1),"CENTER"),
+#                                          ('ALIGN',(0,0),(0,1),"CENTER"),
+#                                         ('BOX',(0,0),(-1,-1),2,colors.black),
+#                                         ('BOX',(2,0),(-1,-1),2,colors.black),
+#                                         ('INNERGRID',(2,0),(3,1),0.5,colors.black)]))
+# #         else:
+# #             headerTable=[
+# #                     [self.img,self.agencyNameForPrint,"Incident: "+self.incidentName,formNameText+" - Page "+str(canvas.getPageNumber())],
+# #                     ["","","Operational Period: ","Printed: "+time.strftime("%a %b %d, %Y  %H:%M")]]
+# #             t=Table(headerTable,colWidths=[x*inch for x in [0.0,5,2.5,2.5]],rowHeights=[x*inch for x in [0.3,0.3]])
+# #             t.setStyle(TableStyle([('FONT',(1,0),(1,1),'Helvetica-Bold'),
+# #                                    ('FONT',(2,0),(3,0),'Helvetica-Bold'),
+# #                                    ('FONTSIZE',(1,0),(1,1),18),
+# #                                           ('SPAN',(0,0),(0,1)),
+# #                                           ('SPAN',(1,0),(1,1)),
+# #                                           ('LEADING',(1,0),(1,1),20),
+# #                                  ('VALIGN',(1,0),(-1,-1),"MIDDLE"),
+# #                                  ('ALIGN',(1,0),(1,-1),"CENTER"),
+# #                                           ('BOX',(0,0),(-1,-1),2,colors.black),
+# #                                           ('BOX',(2,0),(-1,-1),2,colors.black),
+# #                                           ('INNERGRID',(2,0),(3,1),0.5,colors.black)]))
 #         w,h=t.wrapOn(canvas,doc.width,doc.height)
-# #         self.logMsgBox.setInformativeText("Generating page "+str(canvas.getPageNumber()))
-#         QCoreApplication.processEvents()
-#         rprint("Page number:"+str(canvas.getPageNumber()))
-#         rprint("Height:"+str(h))
-#         rprint("Pagesize:"+str(doc.pagesize))
+# # #         self.logMsgBox.setInformativeText("Generating page "+str(canvas.getPageNumber()))
+# #         QCoreApplication.processEvents()
+# #         rprint("Page number:"+str(canvas.getPageNumber()))
+# #         rprint("Height:"+str(h))
+# #         rprint("Pagesize:"+str(doc.pagesize))
 #         t.drawOn(canvas,doc.leftMargin,doc.pagesize[1]-h-0.5*inch) # enforce a 0.5 inch top margin regardless of paper size
-# ##        canvas.grid([x*inch for x in [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10,10.5,11]],[y*inch for y in [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5]])
-#         rprint("done drawing printLogHeaderFooter canvas")
+# # ##        canvas.grid([x*inch for x in [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10,10.5,11]],[y*inch for y in [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5]])
+# #         rprint("done drawing printLogHeaderFooter canvas")
 #         canvas.restoreState()
-#         rprint("end of printLogHeaderFooter")
+# #         rprint("end of printLogHeaderFooter")
         
     # optional argument 'teams': if True, generate one pdf of all individual team logs;
     #  so, this function should be called once to generate the overall log pdf, and
     #  again with teams=True to generate team logs pdf
     # if 'teams' is an array of team names, just print those team log(s)
-    def writePdf(self):
-        Logger.info("print job started")
-        pdfName=self.csvFileName.replace(".csv",".pdf")
-        try:
-            f=open(pdfName,"wb")
-        except:
-            Logger.error("writePdf: could not open file for write: "+pdfName)
-            return
-        else:
-            f.close()
-        doc = SimpleDocTemplate(pdfName, pagesize=letter,leftMargin=0.5*inch,rightMargin=0.5*inch,topMargin=1.03*inch,bottomMargin=0.5*inch)
-        elements=[]
-        pdfList=[["ID","Name","Time In","Time Out","Total"]]
-        for entry in self.exportList:
-            pdfList.append([entry[0],entry[1],entry[3],entry[4],entry[5]])
-        t=Table(pdfList,repeatRows=1,colWidths=[x*inch for x in [0.75,3,1.25,1.25,1.5]]) 
-        t.setStyle(TableStyle([('FONT',(0,0),(-1,-1),'Helvetica',16),
-                                ('FONT',(0,0),(-1,0),'Helvetica-Bold',16),
-#                                 ('FONTSIZE',(0,0),(-1,-1),16),
-                                ('ALIGN',(0,0),(-1,-1),'CENTER'),
-                                ('ALIGN',(1,0),(1,-1),'LEFT'),
-                                ('INNERGRID', (0,0), (-1,-1), 1, colors.black),
-                                ('BOX', (0,0), (-1,-1), 1, colors.black),
-                                ('BOX', (0,0), (-1,0), 2, colors.black)]))
-
-#         for team in teamFilterList:
-#             extTeamNameLower=getExtTeamName(team).lower()
-#             radioLogPrint=[]
-#             styles = getSampleStyleSheet()
-#             radioLogPrint.append(MyTableModel.header_labels[0:6])
-#             for row in self.radioLog:
-#                 opStartRow=False
-#                 if row[3].startswith("Radio Log Begins:"):
-#                     opStartRow=True
-#                 if row[3].startswith("Operational Period") and row[3].split()[3] == "Begins:":
-#                     opStartRow=True
-#                     entryOpPeriod=int(row[3].split()[2])
-#                 if entryOpPeriod == opPeriod:
-#                     if team=="" or extTeamNameLower==getExtTeamName(row[2]).lower() or opStartRow: # filter by team name if argument was specified
-#                         radioLogPrint.append([row[0],row[1],row[2],Paragraph(row[3],styles['Normal']),Paragraph(row[4],styles['Normal']),Paragraph(row[5],styles['Normal'])])
-#             if not teams or len(radioLogPrint)>2: # don't make a table for teams that have no entries during the requested op period
-#                 t=Table(radioLogPrint,repeatRows=1,colWidths=[x*inch for x in [0.5,0.6,1.25,5.5,1.25,0.9]])
-#                 t.setStyle(TableStyle([('FONT',(0,0),(-1,-1),'Helvetica'),
-#                                         ('FONT',(0,0),(-1,1),'Helvetica-Bold'),
-#                                         ('INNERGRID', (0,0), (-1,-1), 0.25, colors.black),
-#                                        ('BOX', (0,0), (-1,-1), 2, colors.black),
-#                                        ('BOX', (0,0), (5,0), 2, colors.black)]))
-#                 elements.append(t)
-#         doc.build(elements,onFirstPage=functools.partial(self.writePdfHeaderFooter),onLaterPages=functools.partial(self.writePdfHeaderFooter))         
-        elements.append(t)
-        doc.build(elements)
-        Logger.info("print job completed")
-        
-    def importCsv(self):
+    def writePDF(self,download=False):
+        pass
+#         Logger.info("print job started")
+#         pdfName=self.csvFileName.replace(".csv",".pdf")
+#         try:
+#             f=open(pdfName,"wb")
+#         except:
+#             Logger.error("writePDF: could not open file for write: "+pdfName)
+#             return
+#         else:
+#             f.close()
+#         doc = SimpleDocTemplate(pdfName, pagesize=letter,leftMargin=0.5*inch,rightMargin=0.5*inch,topMargin=1.03*inch,bottomMargin=0.5*inch)
+#         elements=[]
+#         pdfList=[["ID","Name","Time In","Time Out","Total"]]
+#         for entry in self.exportList:
+#             pdfList.append([entry[0],entry[1],entry[3],entry[4],entry[5]])
+#         t=Table(pdfList,repeatRows=1,colWidths=[x*inch for x in [0.75,3,1.25,1.25,1.5]]) 
+#         t.setStyle(TableStyle([('FONT',(0,0),(-1,-1),'Helvetica',14),
+#                                 ('FONT',(0,0),(-1,0),'Helvetica-Bold',14),
+# #                                 ('FONTSIZE',(0,0),(-1,-1),16),
+#                                 ('ALIGN',(0,0),(-1,-1),'CENTER'),
+#                                 ('ALIGN',(1,0),(1,-1),'LEFT'),
+#                                 ('INNERGRID', (0,0), (-1,-1), 1, colors.black),
+#                                 ('BOX', (0,0), (-1,-1), 1, colors.black),
+#                                 ('BOX', (0,0), (-1,0), 2, colors.black)]))
+# 
+# #         for team in teamFilterList:
+# #             extTeamNameLower=getExtTeamName(team).lower()
+# #             radioLogPrint=[]
+# #             styles = getSampleStyleSheet()
+# #             radioLogPrint.append(MyTableModel.header_labels[0:6])
+# #             for row in self.radioLog:
+# #                 opStartRow=False
+# #                 if row[3].startswith("Radio Log Begins:"):
+# #                     opStartRow=True
+# #                 if row[3].startswith("Operational Period") and row[3].split()[3] == "Begins:":
+# #                     opStartRow=True
+# #                     entryOpPeriod=int(row[3].split()[2])
+# #                 if entryOpPeriod == opPeriod:
+# #                     if team=="" or extTeamNameLower==getExtTeamName(row[2]).lower() or opStartRow: # filter by team name if argument was specified
+# #                         radioLogPrint.append([row[0],row[1],row[2],Paragraph(row[3],styles['Normal']),Paragraph(row[4],styles['Normal']),Paragraph(row[5],styles['Normal'])])
+# #             if not teams or len(radioLogPrint)>2: # don't make a table for teams that have no entries during the requested op period
+# #                 t=Table(radioLogPrint,repeatRows=1,colWidths=[x*inch for x in [0.5,0.6,1.25,5.5,1.25,0.9]])
+# #                 t.setStyle(TableStyle([('FONT',(0,0),(-1,-1),'Helvetica'),
+# #                                         ('FONT',(0,0),(-1,1),'Helvetica-Bold'),
+# #                                         ('INNERGRID', (0,0), (-1,-1), 0.25, colors.black),
+# #                                        ('BOX', (0,0), (-1,-1), 2, colors.black),
+# #                                        ('BOX', (0,0), (5,0), 2, colors.black)]))
+#         elements.append(t)
+#         doc.build(elements,onFirstPage=self.writePDFHeaderFooter,onLaterPages=self.writePDFHeaderFooter)         
+#         Logger.info("print job completed")
+#         
+    def importCSV(self):
         pass
     
     def sync(self):
@@ -584,7 +639,7 @@ class signinApp(App):
                 self.sm.current='thankyou'
 #                 Logger.info(str(self.signInList))
                 self.exportList=copy.deepcopy(self.signInList)
-                self.writeCsv()
+                self.writeCSV()
                 Clock.schedule_once(self.switchToBlankKeypad,2)
 #             elif 'in and out' in text:
 #                 t=time.time()
@@ -594,7 +649,7 @@ class signinApp(App):
 #                 self.thankyou.ids.idLabel.text=idText
 #                 self.sm.current='thankyou'
 #                 self.exportList=copy.deepcopy(self.signInList)
-#                 self.writeCsv()
+#                 self.writeCSV()
 #                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
                 inTime=entry[3]
@@ -607,7 +662,7 @@ class signinApp(App):
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
                 self.exportList=copy.deepcopy(self.signInList)
-                self.writeCsv()
+                self.writeCSV()
                 Clock.schedule_once(self.switchToBlankKeypad,3)
             Logger.info(str(self.signInList))
 #             Logger.info(str([{'text':str(x)} for entry in self.signInList for x in entry]))
