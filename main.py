@@ -476,6 +476,7 @@ class signinApp(App):
         self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
         self.typed=''
         self.hide()
+        self.keypad.ids.statusLabel.text=""
         self.sm.current='keypad'
     
     def getCurrentlySignedInCount(self,*args):
@@ -509,37 +510,56 @@ class signinApp(App):
         self.sm.current='lookup'
         self.sm.transition.direction='right'
 
+    def signInNameTextUpdate(self):
+        self.setTextToFit(self.signin.ids.nameLabel,self.signin.ids.nameLabel.text)
+        
     def showSignIn(self,id,fromLookup=False):
-        self.signin.ids.nameLabel.text=self.getName(id)
+        self.sm.current='signin'
+        self.setTextToFit(self.signin.ids.nameLabel,self.getName(id))
+        # fit the text again after the transition is done, since the widget
+        #  size (and therefore the text height) is wacky until the screen has
+        #  been displayed for the first time
+        self.signin.on_enter=self.signInNameTextUpdate
         self.signin.ids.idLabel.text=self.getIdText(id)
         self.signin.fromLookup=fromLookup
         certs=self.getCerts(id)
         self.signin.ids.certBox.clear_widgets()
-        for cert in certs:
-            Logger.info("adding certification question for "+cert)
-            certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
-            certLabel=Label(text='Are you ready to deploy as '+cert+'?')
-            certSwitch=YesNoSwitch()
-            certSwitch.cert=cert # pass the cert name as a property of the switch
-    #                         certSwitch.bind(active=self.certSwitchCB)
-            certLayout.add_widget(certLabel)
-            certLayout.add_widget(certSwitch)
-            self.signin.ids.certBox.add_widget(certLayout)
-    #                         buttonsLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
-    #                         self.viewSwitchButton=Button(text='View List\nD.d : 0\nDM.m : 0\nDMS.s : 0')
-    #                 #         self.viewSwitchButton.bind(on_press=self.viewSwitch)
-    #                         buttonsLayout.add_widget(self.viewSwitchButton)
-    #                         goButton=Button(text='Create Markers')
-    #                         goButton.bind(on_press=self.createMarkers)
-    #                         buttonsLayout.add_widget(goButton)
-    #                         self.layout.add_widget(buttonsLayout)
-        self.sm.current='signin'
+        if self.details.eventType=="Search":
+            for cert in certs:
+                Logger.info("adding certification question for "+cert)
+                certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
+                certLabel=Label(text='Are you ready to deploy as '+cert+'?')
+                certSwitch=YesNoSwitch()
+                certSwitch.cert=cert # pass the cert name as a property of the switch
+        #                         certSwitch.bind(active=self.certSwitchCB)
+                certLayout.add_widget(certLabel)
+                certLayout.add_widget(certSwitch)
+                self.signin.ids.certBox.add_widget(certLayout)
+        
 #     def certSwitchCB(self,instance,value):
 #         Logger.info("certSwitchCB called:"+str(instance)+":"+str(value))
 #         Logger.info("  cert:"+str(instance.cert))
-     
+
+    def setTextToFit(self,widget,text):   
+        # for long names, reduce font size until it fits in its widget
+        m=self.defaultTextHeightMultiplier
+        widget.font_size=widget.height*m
+        widget.text=text
+        widget.texture_update()
+#         Logger.info("font size:"+str(widget.font_size))
+#         Logger.info("widget width:"+str(widthWidget.width))
+#         Logger.info("widget height:"+str(heightWidget.height))
+#         Logger.info("texture width:"+str(widget.texture_size[0]))
+        while m>0.3 and widget.texture_size[0]>widget.width:
+            m=m-0.05
+            widget.font_size=widget.height*m
+            widget.texture_update()
+#             Logger.info("  font size:"+str(widget.font_size))
+#             Logger.info("  widget width:"+str(widthWidget.width))
+#             Logger.info("  texture width:"+str(widget.texture_size[0]))
+             
     def keyDown(self,text,fromLookup=False):
-        Logger.info("keyDown: text="+text+"  typed="+self.typed)
+        Logger.info("keyDown: text="+text)
         if len(text)<3: # number or code; it must be from the keypad
             # process the button text
             if text=='bs':
@@ -556,21 +576,29 @@ class signinApp(App):
             else:    
                 self.typed+=text
                 self.show()
+            Logger.info("  typed="+self.typed)
             
+            if self.typed=="":
+                self.keypad.ids.statusLabel.text=""
+            else:
+                self.setTextToFit(self.keypad.ids.statusLabel,"Keep typing. Tap your name when you see it.")
+#                 self.keypad.ids.statusLabel.text="Keep typing. Tap your name when you see it."
+                
             # do the lookup
             if self.typed in self.roster: # there is a match
-                self.keypad.ids.nameButton.text=self.roster[self.typed][0]
-                # for long names, reduce font size until it fits in its widget
-                m=self.defaultTextHeightMultiplier
-                self.keypad.ids.nameButton.font_size=self.keypad.ids.nameButton.height*m
-                self.keypad.ids.nameButton.texture_update()
-                while m>0.3 and self.keypad.ids.nameButton.texture_size[0]>self.keypad.ids.nameButton.width:
-                    m=m-0.05
-                    self.keypad.ids.nameButton.font_size=self.keypad.ids.nameButton.height*m
-                    self.keypad.ids.nameButton.texture_update()
+#                 self.keypad.ids.nameButton.text=self.roster[self.typed][0]
+#                 # for long names, reduce font size until it fits in its widget
+#                 m=self.defaultTextHeightMultiplier
+#                 self.keypad.ids.nameButton.font_size=self.keypad.ids.nameButton.height*m
+#                 self.keypad.ids.nameButton.texture_update()
+#                 while m>0.3 and self.keypad.ids.nameButton.texture_size[0]>self.keypad.ids.nameButton.width:
+#                     m=m-0.05
+#                     self.keypad.ids.nameButton.font_size=self.keypad.ids.nameButton.height*m
+#                     self.keypad.ids.nameButton.texture_update()
+                self.setTextToFit(self.keypad.ids.nameButton,self.roster[self.typed][0])
                 self.keypad.ids.nameButton.background_color=(0,0.5,0,1)
-                self.signin.ids.nameLabel.text=self.roster[self.typed][0]
-                self.signout.ids.nameLabel.text=self.roster[self.typed][0]
+#                 self.signin.ids.nameLabel.text=self.roster[self.typed][0]
+#                 self.signout.ids.nameLabel.text=self.roster[self.typed][0]
             else: # no match
                 if len(self.typed)==0:
                     self.hide()

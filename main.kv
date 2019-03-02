@@ -93,14 +93,14 @@
                 id: detailsbutton
         Label:
             id: topLabel
-            font_size:28
+            font_size:self.parent.height*0.05
         MyButton:
             id: nameButton
             background_normal:''
         Label:
             id: statusLabel
-        Label:
-            text: 'Keep typing.  Tap your name when you see it.'
+#         Label:
+#             text: 'Keep typing.  Tap your name when you see it.'
         BoxLayout:
             orientation: 'horizontal'
             MyButton:
@@ -168,10 +168,10 @@
         orientation: 'vertical'
         Label:
             id: nameLabel
-            font_size:36
+            font_size:self.height*app.defaultTextHeightMultiplier
         Label:
             id: idLabel
-            font_size:24
+            font_size:self.height*app.defaultTextHeightMultiplier*2/3
         Label:
             id: statusLabel
         BoxLayout: # to be filled by relevant certifications at runtime
