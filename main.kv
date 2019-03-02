@@ -18,7 +18,7 @@
 
 <MyButton@Button>:
     text: 'My Key'
-    font_size: 32
+    font_size: self.height*app.defaultTextHeightMultiplier
     on_press: app.keyDown(self.text)
 
 <MyRV@RecycleView>:
@@ -97,7 +97,6 @@
         MyButton:
             id: nameButton
             background_normal:''
-            font_size:36
         Label:
             id: statusLabel
         Label:

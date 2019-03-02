@@ -64,12 +64,23 @@ from kivy.utils import platform
 
 from kivy.logger import Logger
 
-from jnius import cast
-from jnius import autoclass
+if platform in ('android'):
+    from jnius import cast
+    from jnius import autoclass
+    
+    # android pyjnius stuff, used for download and for FLAG_KEEP_SCREEN_ON
+    Environment=autoclass('android.os.Environment')
+    PythonActivity=autoclass('org.kivy.android.PythonActivity')
+    View = autoclass('android.view.View') # to avoid JVM exception re: original thread
+    Params = autoclass('android.view.WindowManager$LayoutParams')
+    mActivity=PythonActivity.mActivity
+    Context=autoclass('android.content.Context')
+    DownloadManager=autoclass('android.app.DownloadManager')
 
 class signinApp(App):
     def build(self):
         Logger.info("build starting...")
+        self.defaultTextHeightMultiplier=0.7
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
@@ -80,7 +91,7 @@ class signinApp(App):
 #         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
         if platform in ('windows'):
             self.downloadDir=os.path.join(os.path.expanduser('~'),"Downloads")
-            self.rosterDir=self.downloadsDir
+            self.rosterDir=self.downloadDir
             self.csvDir=self.rosterDir
         else:
 #             self.rosterDir="/storage/emulated/0/Download"
@@ -110,6 +121,8 @@ class signinApp(App):
         self.theList=self.sm.get_screen('theList')
         self.lookup=self.sm.get_screen('lookup')
         self.details=self.sm.get_screen('details')
+#         self.keypad.on_enter=self.setKeepScreenOn()
+#         self.keypad.on_leave=self.clearKeepScreenOn()
         self.defaultNameButtonText='Enter your SAR #'
         self.exitAdminMode()
         self.typed=''
@@ -157,6 +170,20 @@ class signinApp(App):
         self.keypad.ids.topLabel.height=100
         self.keypad.ids.topLabel.text="You entered: "+self.typed
 
+    def setKeepScreenOn(self):
+        PythonActivity.toastError("setKeepScreenOn called")
+        pass
+#         View = autoclass('android.view.View') # to avoid JVM exception re: original thread
+#         Params = autoclass('android.view.WindowManager$LayoutParams')
+#         PythonActivity.mActivity.getWindow().addFlags(Params.FLAG_KEEP_SCREEN_ON)
+        
+    def clearKeepScreenOn(self):
+        PythonActivity.toastError("clearKeepScreenOn called")
+        pass
+#         View = autoclass('android.view.View') # to avoid JVM exception re: original thread
+#         Params = autoclass('android.view.WindowManager$LayoutParams')
+#         PythonActivity.mActivity.getWindow().clearFlags(Params.FLAG_KEEP_SCREEN_ON)
+        
 # self.roster is a dictionary: key=ID, val=[name,certifications]
 #  where 'certs' is a string of the format "K9,M,DR," etc as specified in the
 #  master roster document; relevant certifications will result in questions
@@ -241,11 +268,6 @@ class signinApp(App):
     def downloadFile(self,filename,mimetype):
         path=self.downloadDir+"/"+os.path.basename(filename)
         Logger.info("Downloading i.e. copying from "+filename+" to "+path)
-        Environment=autoclass('android.os.Environment')
-        PythonActivity=autoclass('org.kivy.android.PythonActivity')
-        mActivity=PythonActivity.mActivity
-        Context=autoclass('android.content.Context')
-        DownloadManager=autoclass('android.app.DownloadManager')
         try:
             shutil.copy(filename,path)
         except PermissionError as ex:
@@ -538,6 +560,14 @@ class signinApp(App):
             # do the lookup
             if self.typed in self.roster: # there is a match
                 self.keypad.ids.nameButton.text=self.roster[self.typed][0]
+                # for long names, reduce font size until it fits in its widget
+                m=self.defaultTextHeightMultiplier
+                self.keypad.ids.nameButton.font_size=self.keypad.ids.nameButton.height*m
+                self.keypad.ids.nameButton.texture_update()
+                while m>0.3 and self.keypad.ids.nameButton.texture_size[0]>self.keypad.ids.nameButton.width:
+                    m=m-0.05
+                    self.keypad.ids.nameButton.font_size=self.keypad.ids.nameButton.height*m
+                    self.keypad.ids.nameButton.texture_update()
                 self.keypad.ids.nameButton.background_color=(0,0.5,0,1)
                 self.signin.ids.nameLabel.text=self.roster[self.typed][0]
                 self.signout.ids.nameLabel.text=self.roster[self.typed][0]
