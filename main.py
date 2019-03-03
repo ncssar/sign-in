@@ -58,9 +58,11 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.switch import Switch
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.popup import Popup
 from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty,NumericProperty
 from kivy.clock import Clock
 from kivy.utils import platform
+from kivy.core.window import Window
 
 from kivy.logger import Logger
 
@@ -81,6 +83,8 @@ class signinApp(App):
     def build(self):
         Logger.info("build starting...")
         Logger.info("platform="+str(platform))
+        # from https://pastebin.com/5e7ymKTU
+        Window.bind(on_request_close=self.on_request_close)
         self.defaultTextHeightMultiplier=0.7
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
@@ -763,8 +767,31 @@ class signinApp(App):
                 Clock.schedule_once(self.switchToBlankKeypad,3)
             Logger.info(str(self.signInList))
 #             Logger.info(str([{'text':str(x)} for entry in self.signInList for x in entry]))
-                
-
+    
+    
+    # from https://pastebin.com/5e7ymKTU            
+    def on_request_close(self, *args, **kwargs):
+        self.textpopup(title='Exit', text='Are you sure?')
+        return True
+ 
+    def textpopup(self, title='', text=''):
+        """Open the pop-up with the name.
+ 
+        :param title: title of the pop-up to open
+        :type title: str
+        :param text: main text of the pop-up to open
+        :type text: str
+        :rtype: None
+        """
+        box = BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=text))
+        mybutton = Button(text='OK', size_hint=(1, 0.25))
+        box.add_widget(mybutton)
+        popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
+        mybutton.bind(on_release=self.stop)
+        popup.open()
+        
+        
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
 
 # prevent keyboard on selection by getting rid of FocusBehavior from inheritance list
