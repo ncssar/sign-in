@@ -18,7 +18,9 @@
 
 <MyButton@Button>:
     text: 'My Key'
-    font_size: self.height*app.defaultTextHeightMultiplier
+    font_size: min(self.height*app.defaultTextHeightMultiplier,self.parent.parent.height*0.05)
+    halign:'center'
+    valign:'middle'
     on_press: app.keyDown(self.text)
 
 <MyRV@RecycleView>:
@@ -246,13 +248,17 @@
             id: statusLabel
         MyButton:
             text: 'Sign Out Now'
+            font_size:self.parent.parent.height*1/20
         MyButton:
             text: 'Sign Out 30min From Now'
+            font_size:self.parent.parent.height*1/50
             opacity: 0.2
         MyButton:
             text: 'Sign Out 60min From Now'
+            font_size:self.parent.parent.height*1/50
             opacity: 0.2
         MyButton:
+            font_size:self.parent.parent.height*1/20
             text: 'Back'
             
 <AlreadySignedOutScreen>:
@@ -266,9 +272,13 @@
             font_size:self.height*app.defaultTextHeightMultiplier*2/3
         Label:
             id: statusLabel
-        MyButton:
+        Button:
             text: 'That must be a mistake; change my latest sign-out time to right now.'
-            font_size:self.height*app.defaultTextHeightMultiplier*1/2
+            font_size: min(self.height*app.defaultTextHeightMultiplier,self.parent.parent.height*0.04)
+            halign:'center'
+            valign:'middle'
+            on_press: app.keyDown(self.text)
+            text_size:self.width,self.height # enable word wrap
         MyButton:
             text: 'Sign In Again'
         MyButton:
@@ -327,7 +337,7 @@
                     id: theGridLayout
                     cols: 6
                     size_hint_y: None
-                    default_size: None, dp(26)
+                    default_size: None, dp(32)
                     default_size_hint: 1, None
                     size_hint_y: None
                     height: self.minimum_height
@@ -351,7 +361,7 @@
                 SelectableRecycleGridLayout:
                     cols: 1
                     size_hint_y: None
-                    default_size: None, dp(26)
+                    default_size: None, dp(32)
                     default_size_hint: 1, None
                     size_hint_y: None
                     height: self.minimum_height
