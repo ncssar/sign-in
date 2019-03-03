@@ -80,6 +80,7 @@ if platform in ('android'):
 class signinApp(App):
     def build(self):
         Logger.info("build starting...")
+        Logger.info("platform="+str(platform))
         self.defaultTextHeightMultiplier=0.7
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
@@ -131,8 +132,8 @@ class signinApp(App):
         self.readRoster()
 #         self.setupAlphaGrouping()
         self.startTime=time.time()
-        self.clocktext=self.keypad.ids.clocktext
-        Clock.schedule_interval(self.clocktext.update,1)
+#         self.clocktext=self.keypad.ids.clocktext
+#         Clock.schedule_interval(self.clocktext.update,1)
         self.sm.current='details'
         return self.sm
 
@@ -465,15 +466,21 @@ class signinApp(App):
             return "--"
         if sec<1e6: # assume it's an elapsed / total time
             t=time.gmtime(sec)
-            if t.tm_hour==0:
-                return time.strftime("%#M min",t)
-            if t.tm_hour==1:
-                return time.strftime("%#H hr %#M min",t)
-            return time.strftime("%#H hrs %#M min",t)
+            if t.tm_hour>1: # plural hours if needed
+                s='s'
+            else:
+                s=''
+            # stripping of leading zeros in format strings in strftime
+            #  is not platform-intependent; just use tm_min/tm_hour instead
+            mStr=str(t.tm_min)+" min"
+            hStr=str(t.tm_hour)+" hr"+s
+            if t.tm_hour==0: # don't show hours if total is <1hr
+                return mStr
+            return hStr+" "+mStr
         return time.strftime("%H:%M",time.localtime(sec))
     
     def switchToBlankKeypad(self,*args):
-        self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
+#         self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
         self.typed=''
         self.hide()
         self.keypad.ids.statusLabel.text=""
@@ -512,7 +519,16 @@ class signinApp(App):
 
     def signInNameTextUpdate(self):
         self.setTextToFit(self.signin.ids.nameLabel,self.signin.ids.nameLabel.text)
+
+    def signOutNameTextUpdate(self):
+        self.setTextToFit(self.signout.ids.nameLabel,self.signout.ids.nameLabel.text)
         
+    def alreadySignedOutNameTextUpdate(self):
+        self.setTextToFit(self.alreadysignedout.ids.nameLabel,self.alreadysignedout.ids.nameLabel.text)
+        
+    def thankyouNameTextUpdate(self):
+        self.setTextToFit(self.thankyou.ids.nameLabel,self.thankyou.ids.nameLabel.text,initialFontSize=self.thankyou.height*0.1)
+                        
     def showSignIn(self,id,fromLookup=False):
         self.sm.current='signin'
         self.setTextToFit(self.signin.ids.nameLabel,self.getName(id))
@@ -540,23 +556,27 @@ class signinApp(App):
 #         Logger.info("certSwitchCB called:"+str(instance)+":"+str(value))
 #         Logger.info("  cert:"+str(instance.cert))
 
-    def setTextToFit(self,widget,text):   
+    def setTextToFit(self,widget,text,initialFontSize=None):   
         # for long names, reduce font size until it fits in its widget
-        m=self.defaultTextHeightMultiplier
-        widget.font_size=widget.height*m
+        if initialFontSize:
+            m=initialFontSize/widget.height
+            widget.font_size=initialFontSize
+        else:
+            m=self.defaultTextHeightMultiplier
+            widget.font_size=widget.height*m
         widget.text=text
         widget.texture_update()
-#         Logger.info("font size:"+str(widget.font_size))
-#         Logger.info("widget width:"+str(widthWidget.width))
-#         Logger.info("widget height:"+str(heightWidget.height))
-#         Logger.info("texture width:"+str(widget.texture_size[0]))
-        while m>0.3 and widget.texture_size[0]>widget.width:
+        Logger.info("font size:"+str(widget.font_size))
+        Logger.info("widget width:"+str(widget.width))
+        Logger.info("widget height:"+str(widget.height))
+        Logger.info("texture width:"+str(widget.texture_size[0]))
+        while m>0.1 and widget.texture_size[0]>widget.width:
             m=m-0.05
             widget.font_size=widget.height*m
             widget.texture_update()
-#             Logger.info("  font size:"+str(widget.font_size))
+            Logger.info("  font size:"+str(widget.font_size))
 #             Logger.info("  widget width:"+str(widthWidget.width))
-#             Logger.info("  texture width:"+str(widget.texture_size[0]))
+            Logger.info("  texture width:"+str(widget.texture_size[0]))
              
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
@@ -657,7 +677,11 @@ class signinApp(App):
 # #                         self.layout.add_widget(buttonsLayout)
 #                     self.sm.current='signin'
                 elif entry[4]==0: # signed in but not signed out
-                    self.signout.ids.nameLabel.text=self.getName(id)
+                    self.setTextToFit(self.signout.ids.nameLabel,self.getName(id))
+                    # fit the text again after the transition is done, since the widget
+                    #  size (and therefore the text height) is wacky until the screen has
+                    #  been displayed for the first time
+                    self.signout.on_enter=self.signOutNameTextUpdate
                     self.signout.ids.idLabel.text=self.getIdText(id)
                     self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[3])
                     self.signout.fromLookup=fromLookup
@@ -666,7 +690,12 @@ class signinApp(App):
                     text=""
                     for k in ii: # build the full string of all previous sign-in / sign-out pairs
                         text=text+"In: "+self.timeStr(self.signInList[k][3])+"   Out: "+self.timeStr(self.signInList[k][4])+"   Total: "+self.timeStr(self.signInList[k][5])+"\n"
-                    self.alreadysignedout.ids.nameLabel.text=self.getName(id)
+#                     self.alreadysignedout.ids.nameLabel.text=self.getName(id)
+                    self.setTextToFit(self.alreadysignedout.ids.nameLabel,self.getName(id))
+                    # fit the text again after the transition is done, since the widget
+                    #  size (and therefore the text height) is wacky until the screen has
+                    #  been displayed for the first time
+                    self.alreadysignedout.on_enter=self.alreadySignedOutNameTextUpdate
                     self.alreadysignedout.ids.idLabel.text=self.getIdText(id)
                     self.alreadysignedout.fromLookup=fromLookup
                     self.alreadysignedout.ids.statusLabel.text="You are already signed out:\n"+text
@@ -692,7 +721,12 @@ class signinApp(App):
                 Logger.info(id+" "+name+" signed in and is ready to deploy as "+str(certs))
                 self.signInList.append([id,name,','.join(certs),t,0,0])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
-                self.thankyou.ids.nameLabel.text=self.getName(id)
+#                 self.thankyou.ids.nameLabel.text=self.getName(id)
+                self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
+                # fit the text again after the transition is done, since the widget
+                #  size (and therefore the text height) is wacky until the screen has
+                #  been displayed for the first time
+                self.thankyou.on_enter=self.thankyouNameTextUpdate                
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
 #                 Logger.info(str(self.signInList))
@@ -716,7 +750,12 @@ class signinApp(App):
                 entry[4]=outTime
                 entry[5]=totalTime
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
-                self.thankyou.ids.nameLabel.text=self.getName(id)
+#                 self.thankyou.ids.nameLabel.text=self.getName(id)
+                self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
+                # fit the text again after the transition is done, since the widget
+                #  size (and therefore the text height) is wacky until the screen has
+                #  been displayed for the first time
+                self.thankyou.on_enter=self.thankyouNameTextUpdate 
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
                 self.exportList=copy.deepcopy(self.signInList)

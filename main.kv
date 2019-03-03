@@ -82,11 +82,11 @@
         orientation: 'vertical'
         BoxLayout:
             height:20
-            Label:
-                id: headerLabel
-                text: ''
-            ClockText:
-                id: clocktext
+#             Label:
+#                 id: headerLabel
+#                 text: ''
+#             ClockText:
+#                 id: clocktext
             ListButton:
                 id: listbutton
             DetailsButton:
@@ -238,10 +238,10 @@
         orientation: 'vertical'
         Label:
             id: nameLabel
-            font_size:36
+            font_size:self.height*app.defaultTextHeightMultiplier
         Label:
             id: idLabel
-            font_size:24
+            font_size:self.height*app.defaultTextHeightMultiplier*2/3
         Label:
             id: statusLabel
         MyButton:
@@ -260,15 +260,15 @@
         orientation: 'vertical'
         Label:
             id: nameLabel
-            font_size:36
+            font_size:self.height*app.defaultTextHeightMultiplier
         Label:
             id: idLabel
-            font_size:24
+            font_size:self.height*app.defaultTextHeightMultiplier*2/3
         Label:
             id: statusLabel
         MyButton:
             text: 'That must be a mistake; change my latest sign-out time to right now.'
-            font_size:18
+            font_size:self.height*app.defaultTextHeightMultiplier*1/2
         MyButton:
             text: 'Sign In Again'
         MyButton:
@@ -278,17 +278,19 @@
     BoxLayout:
         orientation: 'vertical'
         Label:
-            font_size: 24
+            font_size: self.height*app.defaultTextHeightMultiplier*1/3
             text: 'Thank You'
         Label:
+#             height:self.parent.height*0.1
             id: nameLabel
-            font_size: 36
+#             font_size: self.height*app.defaultTextHeightMultiplier*1/2
+            font_size: self.parent.parent.height*0.1
         Label:
             id: idLabel
-            font_size:24
+            font_size:self.height*app.defaultTextHeightMultiplier*1/3
         Label:
             id: statusLabel
-            font_size: 18
+            font_size: self.height*app.defaultTextHeightMultiplier*1/4
             
 <ListScreen>:
     BoxLayout:
