@@ -24,7 +24,7 @@ __version__ = '1.0'
 # perform any calls to Config.set before importing any kivy modules!
 # (https://kivy.org/docs/api-kivy.config.html)
 from kivy.config import Config
-# Config.set('kivy','keyboard_mode','system')
+Config.set('kivy','keyboard_mode','system')
 Config.set('kivy','log_dir','log')
 Config.set('kivy','log_enable',1)
 Config.set('kivy','log_level','info')
@@ -59,6 +59,8 @@ from kivy.uix.label import Label
 from kivy.uix.switch import Switch
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
+from kivy.uix.dropdown import DropDown
+from kivy.uix.textinput import TextInput
 from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty,NumericProperty
 from kivy.clock import Clock
 from kivy.utils import platform
@@ -637,6 +639,12 @@ class signinApp(App):
                         self.exitAdminMode()
         elif text=="Admin Mode":
             self.exitAdminMode()
+        elif text=='Back':
+            self.sm.transition.direction='right'
+            if self.sm.current_screen.fromLookup:
+                self.sm.current='lookup'
+            else:
+                self.sm.current='keypad'
         else: # a different button
             id=self.typed
 #             idText=str(id)
@@ -704,12 +712,12 @@ class signinApp(App):
                     self.alreadysignedout.fromLookup=fromLookup
                     self.alreadysignedout.ids.statusLabel.text="You are already signed out:\n"+text
                     self.sm.current='alreadysignedout'
-            elif text=='Back':
-                self.sm.transition.direction='right'
-                if self.sm.current_screen.fromLookup:
-                    self.sm.current='lookup'
-                else:
-                    self.sm.current='keypad'
+#             elif text=='Back':
+#                 self.sm.transition.direction='right'
+#                 if self.sm.current_screen.fromLookup:
+#                     self.sm.current='lookup'
+#                 else:
+#                     self.sm.current='keypad'
             elif text=='Sign In Again':
                 self.showSignIn(id)
             elif text=='Sign In Now':
@@ -884,6 +892,7 @@ class ListScreen(Screen):
     bigList=ListProperty([])
 
 class LookupScreen(Screen):
+    fromLookup=BooleanProperty(False) # so that 'back' will go to keypad screen
     rosterList=ListProperty(["id"])
     
 class DetailsScreen(Screen):
@@ -892,6 +901,49 @@ class DetailsScreen(Screen):
     eventLocation=StringProperty("")
     rosterFileName=StringProperty("")
 
+
+class ComboEdit(TextInput):
+    options = ListProperty(('', ))
+    def __init__(self, **kw):
+        ddn = self.drop_down = DropDown()
+        ddn.bind(on_select=self.on_select)
+        super(ComboEdit, self).__init__(**kw)
+
+    def on_options(self, instance, value):
+#         Logger.info("on_options called:"+str(instance)+":"+str(value))
+        ddn = self.drop_down
+        ddn.clear_widgets()
+        for option in value:
+            but=Button(text=option,size_hint_y=None,height='24sp')
+            but.bind(on_release=lambda btn: ddn.select(btn.text))
+            ddn.add_widget(but)
+
+    def on_select(self, *args):
+        self.text = args[1]
+        [name,id]=self.text.split(" : ")
+        theApp.typed=id
+        Logger.info("calling keyDown: typed="+theApp.typed+"  name="+name+"  id="+id)
+        theApp.keyDown(name,fromLookup=True) # mimic the name being tapped from the keypad screen
+        Clock.schedule_once(self.clear_selection,0.5) # aesthetic - to prepare for the next lookup
+ 
+    def clear_selection(self,*args):
+        self.text=''
+        ddn=self.drop_down
+        ddn.clear_widgets()
+        theApp.typed=''
+    
+    def on_touch_up(self, touch):
+        Logger.info("on_touch_up called")
+        if touch.grab_current == self:
+            self.drop_down.open(self)
+        return super(ComboEdit, self).on_touch_up(touch)
+
+    def on_text(self,instance,value):
+        if self.text!="":
+            instance.options=[x for x in self.parent.parent.rosterList if x.lower().startswith(self.text.lower())]
+        else:
+            self.clear_selection()
+        
 
 if __name__ == '__main__':
     theApp=signinApp()
