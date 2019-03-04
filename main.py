@@ -127,14 +127,10 @@ class signinApp(App):
         self.thankyou=self.sm.get_screen('thankyou')
         self.theList=self.sm.get_screen('theList')
         self.lookup=self.sm.get_screen('lookup')
-        
-        # with the next line uncommented, behavior is strange:
-        # 1. textinput does get focus and keyboard pops up
-        # 2. option widgets are not drawn the first time until focus out and
-        #     back in again; after that option redraws are immediate
-        # 3. exit intermittently hangs
-#         self.lookup.on_enter=self.focusToLookupCombo
-        
+        # auto-raise the keyboard when the lookup screen is shown;
+        # auto-blank the lookup text and results when the screen is changed
+        self.lookup.on_enter=self.lookupEnter
+        self.lookup.on_leave=self.lookupLeave
         self.details=self.sm.get_screen('details')
 #         self.keypad.on_enter=self.setKeepScreenOn()
 #         self.keypad.on_leave=self.clearKeepScreenOn()
@@ -151,9 +147,16 @@ class signinApp(App):
         self.sm.current='details'
         return self.sm
 
-    def focusToLookupCombo(self):
-        Logger.info("focusToLookupCombo called")
-        self.lookup.ids.combo.focus=True
+    def lookupEnter(self):
+        Logger.info("lookupEnter called")
+        c=self.lookup.ids.combo
+        c.focus=True
+        c.drop_down.open(c)
+    
+    def lookupLeave(self):
+        Logger.info("lookupLeave called")
+        self.lookup.ids.combo.text='' # for some reason this doesn't call on_options
+        self.lookup.ids.combo.options=[] # so call it specifically
         
     def exitAdminMode(self):
         Logger.info("Exiting admin mode")
@@ -877,11 +880,14 @@ class ClockText(Label):
     def update(self,*args):
         self.text=time.strftime('%H:%M')
 
+
 class YesNoSwitch(Switch):
     pass
 
+
 class KeypadScreen(Screen):
     pass
+
 
 class SignInScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
@@ -892,11 +898,14 @@ class SignInScreen(Screen):
 class SignOutScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
 
+
 class AlreadySignedOutScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
 
+
 class ThankyouScreen(Screen):
     pass
+
 
 class ListScreen(Screen):
     idList=ListProperty(["id"])
@@ -906,9 +915,11 @@ class ListScreen(Screen):
     totalTimeList=ListProperty(["total"])
     bigList=ListProperty([])
 
+
 class LookupScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to keypad screen
     rosterList=ListProperty(["id"])
+
     
 class DetailsScreen(Screen):
     eventType=StringProperty("")
@@ -925,8 +936,8 @@ class ComboEdit(TextInput):
 #         self.focus=True
         super(ComboEdit, self).__init__(**kw)
 
-    def show_keyboard(self,*args):
-        self.focus=True
+#     def show_keyboard(self,*args):
+#         self.focus=True
         
     def on_options(self, instance, value):
         Logger.info("on_options called:"+str(instance)+":"+str(value))
@@ -934,7 +945,7 @@ class ComboEdit(TextInput):
         ddn.clear_widgets()
         for option in value:
             Logger.info("creating button for "+option)
-            b=Button(text=option,size_hint_y=None,height=Window.height/30)
+            b=Button(text=option,size_hint_y=None,height=Window.height/20,font_size=Window.height/25)
             b.bind(on_release=lambda btn: ddn.select(btn.text))
             ddn.add_widget(b)
 
@@ -965,13 +976,15 @@ class ComboEdit(TextInput):
         self.text=value
         if value!="":
             instance.options=[x for x in self.parent.parent.rosterList if x.lower().startswith(value.lower())]
-            Logger.info("options:"+str(instance.options))
+
         else:
-            self.clear_selection()
-            
+            instance.options=[]
+#             self.clear_selection()
+        Logger.info("options:"+str(instance.options))
+        return True
+        
 #     def on_focus(self,instance,value):
 #         Logger.info("on_focus called:instance="+str(instance)+":value="+str(value))
-#         self.show_keyboard()
         
 
 if __name__ == '__main__':
