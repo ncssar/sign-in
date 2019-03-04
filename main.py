@@ -127,6 +127,14 @@ class signinApp(App):
         self.thankyou=self.sm.get_screen('thankyou')
         self.theList=self.sm.get_screen('theList')
         self.lookup=self.sm.get_screen('lookup')
+        
+        # with the next line uncommented, behavior is strange:
+        # 1. textinput does get focus and keyboard pops up
+        # 2. option widgets are not drawn the first time until focus out and
+        #     back in again; after that option redraws are immediate
+        # 3. exit intermittently hangs
+#         self.lookup.on_enter=self.focusToLookupCombo
+        
         self.details=self.sm.get_screen('details')
 #         self.keypad.on_enter=self.setKeepScreenOn()
 #         self.keypad.on_leave=self.clearKeepScreenOn()
@@ -143,6 +151,10 @@ class signinApp(App):
         self.sm.current='details'
         return self.sm
 
+    def focusToLookupCombo(self):
+        Logger.info("focusToLookupCombo called")
+        self.lookup.ids.combo.focus=True
+        
     def exitAdminMode(self):
         Logger.info("Exiting admin mode")
         self.keypad.ids.listbutton.opacity=0
@@ -522,7 +534,9 @@ class signinApp(App):
         self.sm.transition.direction='left'
         self.sm.current='lookup'
         self.sm.transition.direction='right'
-
+#         self.lookup.ids.combo.focus=True # automatically raise the keyboard
+#         self.lookup.ids.combo.show_keyboard()
+        
     def signInNameTextUpdate(self):
         self.setTextToFit(self.signin.ids.nameLabel,self.signin.ids.nameLabel.text)
 
@@ -647,6 +661,7 @@ class signinApp(App):
                 self.sm.current='keypad'
         else: # a different button
             id=self.typed
+            Logger.info("  other key pressed.  id="+str(id))
 #             idText=str(id)
 #             if id.isdigit():
 #                 idText="SAR "+str(id)
@@ -907,20 +922,26 @@ class ComboEdit(TextInput):
     def __init__(self, **kw):
         ddn = self.drop_down = DropDown()
         ddn.bind(on_select=self.on_select)
+#         self.focus=True
         super(ComboEdit, self).__init__(**kw)
 
+    def show_keyboard(self,*args):
+        self.focus=True
+        
     def on_options(self, instance, value):
-#         Logger.info("on_options called:"+str(instance)+":"+str(value))
+        Logger.info("on_options called:"+str(instance)+":"+str(value))
         ddn = self.drop_down
         ddn.clear_widgets()
         for option in value:
-            but=Button(text=option,size_hint_y=None,height='24sp')
-            but.bind(on_release=lambda btn: ddn.select(btn.text))
-            ddn.add_widget(but)
+            Logger.info("creating button for "+option)
+            b=Button(text=option,size_hint_y=None,height=Window.height/30)
+            b.bind(on_release=lambda btn: ddn.select(btn.text))
+            ddn.add_widget(b)
 
     def on_select(self, *args):
         self.text = args[1]
         [name,id]=self.text.split(" : ")
+        theApp.keyDown(id[-1]) # mimic the final character of the ID, to trigger the lookup
         theApp.typed=id
         Logger.info("calling keyDown: typed="+theApp.typed+"  name="+name+"  id="+id)
         theApp.keyDown(name,fromLookup=True) # mimic the name being tapped from the keypad screen
@@ -930,7 +951,8 @@ class ComboEdit(TextInput):
         self.text=''
         ddn=self.drop_down
         ddn.clear_widgets()
-        theApp.typed=''
+#         theApp.typed='' # not sure why this was needed;
+        #but it causes action buttons to fail because they depend on id at action-button-press time!
     
     def on_touch_up(self, touch):
         Logger.info("on_touch_up called")
@@ -939,10 +961,17 @@ class ComboEdit(TextInput):
         return super(ComboEdit, self).on_touch_up(touch)
 
     def on_text(self,instance,value):
-        if self.text!="":
-            instance.options=[x for x in self.parent.parent.rosterList if x.lower().startswith(self.text.lower())]
+        Logger.info("on_text called:"+str(instance)+":"+str(value))
+        self.text=value
+        if value!="":
+            instance.options=[x for x in self.parent.parent.rosterList if x.lower().startswith(value.lower())]
+            Logger.info("options:"+str(instance.options))
         else:
             self.clear_selection()
+            
+#     def on_focus(self,instance,value):
+#         Logger.info("on_focus called:instance="+str(instance)+":value="+str(value))
+#         self.show_keyboard()
         
 
 if __name__ == '__main__':
