@@ -87,6 +87,7 @@ class signinApp(App):
         Logger.info("platform="+str(platform))
         # from https://pastebin.com/5e7ymKTU
         Window.bind(on_request_close=self.on_request_close)
+        Window.bind(on_keyboard=self.on_keyboard)
         self.defaultTextHeightMultiplier=0.7
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
@@ -147,6 +148,27 @@ class signinApp(App):
         self.sm.current='details'
         return self.sm
 
+    def on_keyboard(self,window,key,*args):
+#         Logger.info("key pressed:"+str(key))
+        if key==27: # esc key, or android 'back' button
+            Logger.info("  esc pressed")
+            if self.adminMode:
+                self.on_request_close()
+            elif self.sm.current=='keypad':
+                self.keyDown("bs") # backspace
+            elif self.sm.current=='lookup':
+                self.switchToBlankKeypad()
+            else:
+                self.sm.current='keypad'
+        elif key==8: # backspace
+            Logger.info("  backspace pressed")
+            self.keyDown("bs")
+        # unicode decimal 32-126 should be printable, so, pass them
+        #  to keyDown directly
+        elif 31<key<127: # letter or number, regardless of shift key
+            self.keyDown(chr(key)) # if not esc or bs, emulate a button press of the same letter/number
+        return True
+    
     def lookupEnter(self):
         Logger.info("lookupEnter called")
         c=self.lookup.ids.combo
@@ -506,6 +528,8 @@ class signinApp(App):
         self.hide()
         self.keypad.ids.statusLabel.text=""
         self.sm.current='keypad'
+        if self.adminMode:
+            self.exitAdminMode()
     
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
@@ -521,15 +545,11 @@ class signinApp(App):
         self.sm.transition.direction='up'
         self.sm.current='theList'
         self.sm.transition.direction='down'
-        if self.adminMode:
-            self.exitAdminMode()
 
     def showDetails(self,*args):
         self.sm.transition.direction='up'
         self.sm.current='details'
         self.sm.transition.direction='down'
-        if self.adminMode:
-            self.exitAdminMode()
         
     def showLookup(self,*args):
         self.lookup.rosterList=sorted([str(val[0])+" : "+str(key) for key,val in self.roster.items()])
@@ -748,7 +768,10 @@ class signinApp(App):
                 #  the actual switch will be .children[0] as long as it was the
                 #  last widget inserted to its certLayout
                 certs=[certLayout.children[0].cert for certLayout in self.signin.ids.certBox.children if certLayout.children[0].active] 
-                Logger.info(id+" "+name+" signed in and is ready to deploy as "+str(certs))
+                s=id+" "+name+" signed in"
+                if self.details.eventType=="Search":
+                    s+="and is ready to deploy as "+str(certs)
+                Logger.info(s)
                 self.signInList.append([id,name,','.join(certs),t,0,0])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
@@ -797,8 +820,12 @@ class signinApp(App):
     
     # from https://pastebin.com/5e7ymKTU            
     def on_request_close(self, *args, **kwargs):
-        self.textpopup(title='Exit', text='Are you sure?')
-        return True
+        Logger.info("on_request_close called")
+        if self.adminMode:
+            self.textpopup(title='Exit', text='Are you sure?')
+            return True
+        else:
+            return True
  
     def textpopup(self, title='', text=''):
         """Open the pop-up with the name.
