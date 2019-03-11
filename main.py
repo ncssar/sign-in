@@ -95,7 +95,7 @@ class signinApp(App):
         self.possibleCerts=["K9A","K9T","M","S","K9","DR"]
         self.roster={}
         self.signInList=[]
-        self.exportList=[]
+#         self.exportList=[]
 #         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
         if platform in ('windows'):
             self.downloadDir=os.path.join(os.path.expanduser('~'),"Downloads")
@@ -136,7 +136,8 @@ class signinApp(App):
 #         self.keypad.on_enter=self.setKeepScreenOn()
 #         self.keypad.on_leave=self.clearKeepScreenOn()
         self.defaultNameButtonText='Enter your SAR #'
-        self.exitAdminMode()
+#         self.exitAdminMode()
+        self.enterAdminMode()
         self.typed=''
         self.finalized='NO'
         self.details.rosterFileName=self.rosterFileName
@@ -328,7 +329,36 @@ class signinApp(App):
             DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
             DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
             PythonActivity.toastError("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
-        
+     
+    def readCSV(self,filename=None):
+        if not filename:
+            filename=self.csvFileName
+        Logger.info("readCSV called: filename="+str(filename))
+        with open(filename,'r') as csvFile:
+            Logger.info("csv file "+filename+" opened for read")
+            self.signInList=[] # take some steps to verify (or save) before nuking the existing list!
+            csvReader=csv.reader(csvFile)
+            for row in csvReader:
+                Logger.info("row:"+str(row))
+                if len(row)==0: # skip any blank rows
+                    continue
+                if not row[0].startswith("#") and row[0]!="ID": # prune comment lines and header
+                    row[6]=float(row[6]) # use the epoch sec for time-in
+                    row[7]=float(row[7]) # use the epoch sec for time-out
+                    row[8]=float(row[8]) # use the number of sec for total time
+                    self.signInList.append(row)
+                elif row[0].startswith("## Event Date and Start Time:"):
+                    pass
+                elif row[0].startswith("## Event Name:"):
+                    self.eventName=row[0].split(':')[1]
+                elif row[0].startswith("## Event Type:"):
+                    self.eventType=row[0].split(':')[1]
+                elif row[0].startswith("## Event Location:"):
+                    self.eventLocation=row[0].split(':')[1]
+#             self.exportList=copy.deepcopy(self.signInList) # otherwise this only happens on sign in/out
+            Logger.info(str(len(self.signInList))+" entries read")
+            Logger.info(str(self.signInList))
+           
     def writeCSV(self,rotate=True,download=False):
         # rotate first, since it moves the base file to .bak1
         Logger.info("writeCSV called")
@@ -344,18 +374,18 @@ class signinApp(App):
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
             csvWriter.writerow(["ID","Name","Resource","In","Out","Total"])
-            for entry in self.exportList:
-                # copy in, out, and total seconds to end of list
-                entry.append(entry[3])
-                entry.append(entry[4])
-                entry.append(entry[5])
-                # change entries 2,3,4 to human-readable in case the csv is
-                #  imported to a spreadsheet
-                entry[3]=self.timeStr(entry[3])
-                entry[4]=self.timeStr(entry[4])
-                entry[5]=self.timeStr(entry[5])
-                # csv apparently knows to wrap the string in quotes only if the
-                #  same character used as the delimiter appears in the string
+            for entry in self.signInList:
+#                 # copy in, out, and total seconds to end of list
+#                 entry.append(entry[3])
+#                 entry.append(entry[4])
+#                 entry.append(entry[5])
+#                 # change entries 2,3,4 to human-readable in case the csv is
+#                 #  imported to a spreadsheet
+#                 entry[3]=self.timeStr(entry[3])
+#                 entry[4]=self.timeStr(entry[4])
+#                 entry[5]=self.timeStr(entry[5])
+#                 # csv apparently knows to wrap the string in quotes only if the
+#                 #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.finalized])
         if download and os.path.isfile(self.csvFileName):
@@ -495,14 +525,11 @@ class signinApp(App):
 #         doc.build(elements,onFirstPage=self.writePDFHeaderFooter,onLaterPages=self.writePDFHeaderFooter)         
 #         Logger.info("print job completed")
 #         
-    def importCSV(self):
-        pass
-    
     def sync(self):
         pass
     
     def timeStr(self,sec):
-#         Logger.info("calling timeStr:"+str(sec))
+        Logger.info("calling timeStr:"+str(sec))
         if isinstance(sec,str): # return strings as-is
             return sec
         if sec==0:
@@ -540,8 +567,9 @@ class signinApp(App):
         return len(list(set([x[0] for x in self.signInList])))
          
     def showList(self,*args):
+        Logger.info("showList called")
         self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
-        self.theList.bigList=[str(x) for entry in self.exportList for x in entry[0:6]]
+        self.theList.bigList=[str(x) for entry in self.signInList for x in entry[0:6]]
         self.sm.transition.direction='up'
         self.sm.current='theList'
         self.sm.transition.direction='down'
@@ -726,7 +754,7 @@ class signinApp(App):
 # #                         buttonsLayout.add_widget(goButton)
 # #                         self.layout.add_widget(buttonsLayout)
 #                     self.sm.current='signin'
-                elif entry[4]==0: # signed in but not signed out
+                elif entry[7]==0: # signed in but not signed out
                     self.setTextToFit(self.signout.ids.nameLabel,self.getName(id))
                     # fit the text again after the transition is done, since the widget
                     #  size (and therefore the text height) is wacky until the screen has
@@ -772,7 +800,7 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                self.signInList.append([id,name,','.join(certs),t,0,0])
+                self.signInList.append([id,name,','.join(certs),self.timeStr(t),"--","--",t,0,0])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -783,7 +811,7 @@ class signinApp(App):
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
 #                 Logger.info(str(self.signInList))
-                self.exportList=copy.deepcopy(self.signInList)
+#                 self.exportList=copy.deepcopy(self.signInList)
                 self.writeCSV()
                 Clock.schedule_once(self.switchToBlankKeypad,2)
 #             elif 'in and out' in text:
@@ -797,11 +825,13 @@ class signinApp(App):
 #                 self.writeCSV()
 #                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
-                inTime=entry[3]
+                inTime=entry[6]
                 outTime=time.time()
                 totalTime=outTime-inTime
-                entry[4]=outTime
-                entry[5]=totalTime
+                entry[4]=self.timeStr(outTime)
+                entry[5]=self.timeStr(totalTime)
+                entry[7]=outTime
+                entry[8]=totalTime
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -811,7 +841,7 @@ class signinApp(App):
                 self.thankyou.on_enter=self.thankyouNameTextUpdate 
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
-                self.exportList=copy.deepcopy(self.signInList)
+#                 self.exportList=copy.deepcopy(self.signInList)
                 self.writeCSV()
                 Clock.schedule_once(self.switchToBlankKeypad,3)
             Logger.info(str(self.signInList))
