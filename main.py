@@ -66,6 +66,8 @@ from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
 
+from kivy.garden import datetimepicker
+
 from kivy.logger import Logger
 
 if platform in ('android'):
@@ -147,6 +149,8 @@ class signinApp(App):
 #         self.clocktext=self.keypad.ids.clocktext
 #         Clock.schedule_interval(self.clocktext.update,1)
         self.sm.current='details'
+        Logger.info("Valid CSV files:"+str(self.scanForCSV()))
+        Logger.info("Valid roster files:"+str(self.scanForRosters()))
         return self.sm
 
     def on_keyboard(self,window,key,*args):
@@ -329,7 +333,39 @@ class signinApp(App):
             DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
             DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
             PythonActivity.toastError("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
-     
+ 
+    def scanForCSV(self,dirname=None):
+        rval=[]
+        if not dirname:
+            dirname=self.csvDir
+        if not os.path.isdir(dirname):
+            self.textpopup("ERROR: specified CSV directory "+dirname+" is not a valid directory.")
+            return rval
+        Logger.info("beginning scan for valid CSV files in directory "+dirname)
+        for file in os.listdir(dirname):
+            if file.endswith(".csv"):
+                path=os.path.join(dirname,file)
+                with open(path) as myFile:
+                    if '## NCSSAR Sign-in Sheet' in myFile.read():
+                        rval.append(path)
+        return rval
+        
+    def scanForRosters(self,dirname=None):
+        rval=[]
+        if not dirname:
+            dirname=self.rosterDir
+        if not os.path.isdir(dirname):
+            self.textpopup("ERROR: specified roster directory "+dirname+" is not a valid directory.")
+            return rval
+        Logger.info("beginning scan for valid roster files in directory "+dirname)
+        for file in os.listdir(dirname):
+            if file.endswith(".csv"):
+                path=os.path.join(dirname,file)
+                with open(path) as myFile:
+                    if '## Sign-in Roster' in myFile.read():
+                        rval.append(path)
+        return rval
+             
     def readCSV(self,filename=None):
         if not filename:
             filename=self.csvFileName
@@ -358,8 +394,16 @@ class signinApp(App):
 #             self.exportList=copy.deepcopy(self.signInList) # otherwise this only happens on sign in/out
             Logger.info(str(len(self.signInList))+" entries read")
             Logger.info(str(self.signInList))
-           
+    
+    def updateCSVFileName(self):
+#         f="roster"
+#         if self.details.ids.eventNameField.text!="":
+#             f=f+"_"+self.details.ids.eventNameField.text
+#         if self.
+        pass
+
     def writeCSV(self,rotate=True,download=False):
+        self.updateCSVFileName()
         # rotate first, since it moves the base file to .bak1
         Logger.info("writeCSV called")
         if rotate and os.path.isfile(self.csvFileName):
