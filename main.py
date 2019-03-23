@@ -66,7 +66,11 @@ from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
 
-from kivy.garden import datetimepicker
+# # from kivy.garden import datetimepicker
+# # DatePicker from https://github.com/Skucul/datepicker
+# from datepicker import DatePicker
+# # TimePicker from https://github.com/Skucul/timepicker
+# from timepicker import TimePicker
 
 from kivy.logger import Logger
 
@@ -137,6 +141,7 @@ class signinApp(App):
         self.details=self.sm.get_screen('details')
 #         self.keypad.on_enter=self.setKeepScreenOn()
 #         self.keypad.on_leave=self.clearKeepScreenOn()
+#         self.details.ids.eventStartTimeLabel.bind(on_touch_down=DatetimePicker)
         self.defaultNameButtonText='Enter your SAR #'
 #         self.exitAdminMode()
         self.enterAdminMode()
@@ -917,7 +922,10 @@ class signinApp(App):
         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
         mybutton.bind(on_release=self.stop)
         popup.open()
-        
+# 
+#     def eventStartDateTouch(self,*args,**kwargs):
+#         Logger.info("eventStartDateTouch called")
+#         a=DatePicker()
         
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
 

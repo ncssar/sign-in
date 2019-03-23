@@ -17,6 +17,8 @@
 # #############################################################################
 
 #:import Window kivy.core.window.Window
+#:import DatePicker datepicker
+#:import TimePicker timepicker
 
 <MyButton@Button>:
     text: 'My Key'
@@ -449,6 +451,17 @@
                 multiline: False
                 id: eventLocationField
                 on_text: root.eventLocation=self.text
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Event/O.P. Start Date:'
+            DatePicker:
+                id: eventStartDate
+            Label:
+                text: 'Start Time:'
+            TimePicker:
+                id: eventStartTime
         Label:
             size_hint: None,None
             height: 10
