@@ -456,8 +456,10 @@ def get_quarter(y, m):
         
     return result
 
-def get_date_str(y,m,d):    
-    return "%s. %s. %s, %s" % (get_days_abbrs()[datetime(y,m,d).weekday()],month_abbr[m],d,y)
+def get_date_str(y,m,d):
+    # do not use commas here as they will cause the line to be wrapped in
+    #  double quotes if written to a csv file
+    return "%s %s %s %s" % (get_days_abbrs()[datetime(y,m,d).weekday()],month_abbr[m],d,y)
 
 def today_date_list():
     """ Return list with today date """

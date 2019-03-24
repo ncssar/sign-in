@@ -417,7 +417,7 @@ class signinApp(App):
             Logger.info("csv file "+self.csvFileName+" opened")
             csvWriter=csv.writer(csvFile)
             csvWriter.writerow(["## NCSSAR Sign-in Sheet"])
-            csvWriter.writerow(["## Event Date and Start Time: "+time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(self.startTime))])
+            csvWriter.writerow(["## Event Date and Start Time: "+self.details.ids.eventStartDate.text+" "+self.details.ids.eventStartTime.text])
             csvWriter.writerow(["## Event Name: "+self.details.ids.eventNameField.text])
             csvWriter.writerow(["## Event Type: "+self.details.eventType])
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
@@ -686,17 +686,17 @@ class signinApp(App):
             widget.font_size=widget.height*m
         widget.text=text
         widget.texture_update()
-        Logger.info("font size:"+str(widget.font_size))
-        Logger.info("widget width:"+str(widget.width))
-        Logger.info("widget height:"+str(widget.height))
-        Logger.info("texture width:"+str(widget.texture_size[0]))
+#         Logger.info("font size:"+str(widget.font_size))
+#         Logger.info("widget width:"+str(widget.width))
+#         Logger.info("widget height:"+str(widget.height))
+#         Logger.info("texture width:"+str(widget.texture_size[0]))
         while m>0.1 and widget.texture_size[0]>widget.width:
             m=m-0.05
             widget.font_size=widget.height*m
             widget.texture_update()
-            Logger.info("  font size:"+str(widget.font_size))
+#             Logger.info("  font size:"+str(widget.font_size))
 #             Logger.info("  widget width:"+str(widthWidget.width))
-            Logger.info("  texture width:"+str(widget.texture_size[0]))
+#             Logger.info("  texture width:"+str(widget.texture_size[0]))
              
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)

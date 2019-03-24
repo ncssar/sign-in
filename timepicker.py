@@ -78,7 +78,7 @@ Builder.load_string("""
         anchor_y: "center"
         size_hint_y: 1./3
         GridLayout:
-            cols: 2
+            cols: 3
             spacing: "10dp"
             size_hint_x: None
             width: self.minimum_width
@@ -97,12 +97,20 @@ Builder.load_string("""
                 id: ampmlabel
                 text: root.ampm_text
                 markup: True
-                halign: "left"
+                halign: "right"
                 valign: "middle"
                 # text_size: self.size
                 size_hint_x: None #.4
                 width: self.texture_size[0]
                 font_size: self.height * .3
+            Button:
+                id: okButton
+                text: 'OK'
+                background_color:.7,.7,.7,1
+                size_hint_x: None
+                width: self.texture_size[0]*2
+                font_size: self.height * .5
+                on_press: root.parent.parent.parent.dismiss()
     FloatLayout:
         id: picker_container
         #size_hint_y: 2./3
@@ -215,13 +223,18 @@ class CircularNumberPicker(CircularLayout):
         return c
     shown_items = AliasProperty(_get_shown_items, None)
 
-    def __init__(self, **kw):
+    def __init__(self, val=0, **kw):
         self._trigger_genitems = Clock.create_trigger(self._genitems, -1)
         self.bind(min=self._trigger_genitems,
                   max=self._trigger_genitems,
                   multiples_of=self._trigger_genitems)
         super(CircularNumberPicker, self).__init__(**kw)
         self.selected = self.min
+#         print("CircularNumberPicker init with val="+str(val))
+#         if val!=self.min:
+#             self.selected = val
+#         else:
+#             self.selected = self.min
         self.bind(selected=self.on_selected,
                   pos=self.on_selected,
                   size=self.on_selected)
@@ -252,6 +265,7 @@ class CircularNumberPicker(CircularLayout):
         self.bind(color=lambda ign, c: setattr(self._center_color, "rgb", c))
         Clock.schedule_once(self._genitems)
         Clock.schedule_once(self.on_selected) # Just to make sure pos/size are set
+        self.selected=val
 
     def _genitems(self, *a):
         self.clear_widgets()
@@ -448,7 +462,7 @@ class CircularTimePicker(BoxLayout):
     defaults to "[color={hours_color}][ref=hours]{hours}[/ref][/color]:[color={minutes_color}][ref=minutes]{minutes:02d}[/ref][/color]".
     """
 
-    ampm_format = StringProperty("[color={am_color}][ref=am]AM[/ref][/color]\n[color={pm_color}][ref=pm]PM[/ref][/color]")
+    ampm_format = StringProperty("[color={am_color}][size={am_size}][ref=am]AM[/ref][/size][/color]\n[color={pm_color}][size={pm_size}][ref=pm]PM[/ref][/size][/color]")
     """String that will be formatted and shown in the AM/PM label.
     Can be anything supported by :meth:`str.format`. Make sure you don't
     remove the refs. See the default for the arguments passed to format.
@@ -492,6 +506,7 @@ class CircularTimePicker(BoxLayout):
         return datetime.time(*self.time_list)
     
     def _set_time(self, dt):
+#         print("_set_time called: time_list="+str([dt.hour,dt.minute]))
         self.time_list = [dt.hour, dt.minute]
     time = AliasProperty(_get_time, _set_time, bind=("time_list",))
     """Selected time as a datetime.time object.
@@ -515,16 +530,33 @@ class CircularTimePicker(BoxLayout):
     def _get_ampm_text(self):
         amc = rgb_to_hex(*self.selector_color) if self._am else rgb_to_hex(*self.color)
         pmc = rgb_to_hex(*self.selector_color) if not self._am else rgb_to_hex(*self.color)
-        return self.ampm_format.format(am_color=amc, pm_color=pmc)
+        big=int(0.4*self.ids.timelabel.height)
+        small=int(0.25*self.ids.timelabel.height)
+        ams=big if self._am else small
+        pms=small if self._am else big
+        return self.ampm_format.format(am_color=amc, pm_color=pmc,am_size=ams,pm_size=pms)
     ampm_text = AliasProperty(_get_ampm_text, None, bind=("hours", "ampm_format", "_am"))
 
-    def __init__(self, as_popup=False, touch_switch=False, *args, **kwargs):
+    def __init__(self, as_popup=False, touch_switch=False, hours=False,minutes=False,*args, **kwargs):
         super(CircularTimePicker, self).__init__(*args, **kwargs)
+        # use current (app startup time) as initial time; allow initial time to be specified as init args
+        now=datetime.datetime.now()
+        if hours is False: # must use 'is False' since 0 is a valid hour
+            self.hours=now.hour
+        else:
+            self.hours=hours
+        if minutes is False: # must use 'is False' since 0 is a valid minute
+            self.minutes=now.minute
+        else:
+            self.minutes=minutes
         if self.hours >= 12:
             self._am = False
+        else:
+            self._am = True
+#         print("CTP init: hours="+str(self.hours)+" minutes="+str(self.minutes)+" am="+str(self._am))
         self.bind(time_list=self.on_time_list, picker=self._switch_picker, _am=self.on_ampm)
-        self._h_picker = CircularHourPicker()
-        self._m_picker = CircularMinutePicker()
+        self._h_picker = CircularHourPicker(val=self.hours%12)
+        self._m_picker = CircularMinutePicker(val=self.minutes)
         Clock.schedule_once(self.on_selected)
         Clock.schedule_once(self.on_time_list)
         Clock.schedule_once(self._init_later)
@@ -641,9 +673,15 @@ class TimePicker(TextInput):
     pHint_y = NumericProperty(0.7)
     pHint = ReferenceListProperty(pHint_x ,pHint_y)
 
-    def __init__(self, touch_switch=False, *args, **kwargs):
+    def __init__(self, touch_switch=False, hours=False, minutes=False, *args, **kwargs):
         super(TimePicker, self).__init__(*args, **kwargs)
         
+        self.hours=hours
+        self.minutes=minutes
+        if self.hours is False or self.minutes is False:
+            self.text=datetime.datetime.now().strftime("%H:%M")
+        else:
+            self.text="%02d:%02d" % (self.hours,self.minutes)
         self.touch_switch = touch_switch
         self.init_ui() 
         
@@ -651,8 +689,13 @@ class TimePicker(TextInput):
         
 #        self.text = today_date()
         # Calendar
+#         now=datetime.datetime.now()
         self.cal = CircularTimePicker(as_popup=True, 
-                                  touch_switch=self.touch_switch)
+                                touch_switch=self.touch_switch,hours=self.hours,minutes=self.minutes)
+#                                   touch_switch=self.touch_switch,hours=now.hour,minutes=now.minute)
+#         self.cal.hours=now.hour
+#         self.cal.minutes=now.minute
+#         self.cal._am=now.hour<<12
         # Popup
         self.popup = Popup(content=self.cal, on_dismiss=self.update_value, 
                            title="")
@@ -674,7 +717,9 @@ class TimePicker(TextInput):
         
     def update_value(self, inst):
         """ Update textinput value on popup close """
-        self.text = str(self.cal._get_time())
+        # don't display seconds
+#         self.text = str(self.cal._get_time())
+        self.text="%02d:%02d" % (self.cal.hours,self.cal.minutes)
         self.focus = False 
 
 
