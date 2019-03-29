@@ -26,7 +26,7 @@ Simple usage in Kv language:
 
 from kivy.animation import Animation
 from kivy.clock import Clock
-from kivy.garden.circularlayout import CircularLayout
+from circularlayout import CircularLayout
 # from kivy.garden.recycleview import RecycleView
 from kivy.graphics import Line, Color, Ellipse
 from kivy.lang import Builder
@@ -73,43 +73,48 @@ Builder.load_string("""
 <CircularTimePicker>:
     orientation: "vertical"
     spacing: "20dp"
-    AnchorLayout:
-        anchor_x: "center"
-        anchor_y: "center"
-        size_hint_y: 1./3
-        GridLayout:
-            cols: 3
-            spacing: "10dp"
-            size_hint_x: None
-            width: self.minimum_width
-            #pos_hint: {"center_x": 0.5}
-            Label:
-                id: timelabel
-                text: root.time_text
-                markup: True
-                halign: "right"
-                valign: "middle"
-                # text_size: self.size
-                size_hint_x: None #.6
-                width: self.texture_size[0]
-                font_size: self.height * .75
-            Label:
-                id: ampmlabel
-                text: root.ampm_text
-                markup: True
-                halign: "right"
-                valign: "middle"
-                # text_size: self.size
-                size_hint_x: None #.4
-                width: self.texture_size[0]
-                font_size: self.height * .3
+    BoxLayout:
+        orientation: "vertical"
+        size_hint_y: 0.4
+        AnchorLayout:
+            anchor_x: "center"
+            anchor_y: "center"
+            size_hint_y: 0.75
+            GridLayout:
+                cols: 3
+                spacing: "10dp"
+                size_hint_x: None
+                width: self.minimum_width
+                #pos_hint: {"center_x": 0.5}
+                Label:
+                    id: timelabel
+                    text: root.time_text
+                    markup: True
+                    halign: "right"
+                    valign: "middle"
+                    # text_size: self.size
+                    size_hint_x: None #.6
+                    width: self.texture_size[0]
+                    font_size: self.height * .75
+                Label:
+                    id: ampmlabel
+                    text: root.ampm_text
+                    markup: True
+                    halign: "right"
+                    valign: "middle"
+                    # text_size: self.size
+                    size_hint_x: None #.4
+                    width: self.texture_size[0]
+                    font_size: self.height * .3
+        AnchorLayout:
+            anchor_x: "center"
+            size_hint_y: 0.25
             Button:
                 id: okButton
                 text: 'OK'
                 background_color:.7,.7,.7,1
-                size_hint_x: None
-                width: self.texture_size[0]*2
-                font_size: self.height * .5
+                size_hint_x: 0.5
+                font_size: self.height * .8
                 on_press: root.parent.parent.parent.dismiss()
     FloatLayout:
         id: picker_container
@@ -203,6 +208,8 @@ class CircularNumberPicker(CircularLayout):
     defaults to 1.
     """
 
+    selection_line_width=NumericProperty(5)
+    
     _selection_circle = ObjectProperty(None)
     _selection_line = ObjectProperty(None)
     _selection_dot = ObjectProperty(None)
@@ -254,7 +261,7 @@ class CircularNumberPicker(CircularLayout):
         with self.canvas:
             self._selection_color = Color(*(color + [self.selector_alpha]))
             self._selection_circle = Ellipse(pos=epos, size=esize)
-            self._selection_line = Line(points=[cx, cy, sx, sy])
+            self._selection_line = Line(points=[cx, cy, sx, sy],width=self.selection_line_width,cap='round')
             self._selection_dot_color = Color(*(color + [dot_alpha]))
             self._selection_dot = Ellipse(pos=dpos, size=dsize)
             self._center_color = Color(*self.color)
@@ -454,7 +461,7 @@ class CircularTimePicker(BoxLayout):
     """
 
     # military = BooleanProperty(False)
-    time_format = StringProperty("[color={hours_color}][ref=hours]{hours}[/ref][/color]:[color={minutes_color}][ref=minutes]{minutes:02d}[/ref][/color]")
+    time_format = StringProperty("[color={hours_color}][size={hours_size}][ref=hours]{hours}[/ref][/size][/color]:[color={minutes_color}][size={minutes_size}][ref=minutes]{minutes:02d}[/ref][/size][/color]")
     """String that will be formatted with the time and shown in the time label.
     Can be anything supported by :meth:`str.format`. Make sure you don't
     remove the refs. See the default for the arguments passed to format.
@@ -520,16 +527,20 @@ class CircularTimePicker(BoxLayout):
     _picker = AliasProperty(_get_picker, None)
 
     def _get_time_text(self):
-        hc = rgb_to_hex(*self.selector_color) if self.picker == "hours" else rgb_to_hex(*self.color)
-        mc = rgb_to_hex(*self.selector_color) if self.picker == "minutes" else rgb_to_hex(*self.color)
+        hc = rgb_to_hex(*self.selector_color) if self.picker == "minutes" else rgb_to_hex(*self.color)
+        mc = rgb_to_hex(*self.selector_color) if self.picker == "hours" else rgb_to_hex(*self.color)
+        big=int(1*self.ids.timelabel.height)
+        small=int(0.85*self.ids.timelabel.height)        
+        hs = big if self.picker == "hours" else small
+        ms = big if self.picker == "minutes" else small
         h = self.hours == 0 and 12 or self.hours <= 12 and self.hours or self.hours - 12
         m = self.minutes
-        return self.time_format.format(hours_color=hc, minutes_color=mc, hours=h, minutes=m)
+        return self.time_format.format(hours_color=hc, minutes_color=mc, hours=h, minutes=m, hours_size=hs, minutes_size=ms)
     time_text = AliasProperty(_get_time_text, None, bind=("hours", "minutes", "time_format", "picker"))
 
     def _get_ampm_text(self):
-        amc = rgb_to_hex(*self.selector_color) if self._am else rgb_to_hex(*self.color)
-        pmc = rgb_to_hex(*self.selector_color) if not self._am else rgb_to_hex(*self.color)
+        amc = rgb_to_hex(*self.selector_color) if not self._am else rgb_to_hex(*self.color)
+        pmc = rgb_to_hex(*self.selector_color) if self._am else rgb_to_hex(*self.color)
         big=int(0.4*self.ids.timelabel.height)
         small=int(0.25*self.ids.timelabel.height)
         ams=big if self._am else small
@@ -669,7 +680,7 @@ class CircularTimePicker(BoxLayout):
 #     first_day_of_week = BoundedNumericProperty(0, min=0, max=6)
 class TimePicker(TextInput):
     
-    pHint_x = NumericProperty(0.5)
+    pHint_x = NumericProperty(0.8)
     pHint_y = NumericProperty(0.7)
     pHint = ReferenceListProperty(pHint_x ,pHint_y)
 
@@ -686,7 +697,6 @@ class TimePicker(TextInput):
         self.init_ui() 
         
     def init_ui(self):
-        
 #        self.text = today_date()
         # Calendar
 #         now=datetime.datetime.now()
@@ -698,7 +708,8 @@ class TimePicker(TextInput):
 #         self.cal._am=now.hour<<12
         # Popup
         self.popup = Popup(content=self.cal, on_dismiss=self.update_value, 
-                           title="")
+                            title="")
+#                            title="",size=(Window.width,600))
         self.cal.parent_popup = self.popup
         
         self.bind(focus=self.show_popup)

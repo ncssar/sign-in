@@ -115,12 +115,15 @@
 
         Label:
             id: topLabel
-            font_size:self.parent.height*0.05
+            markup: True
+            halign: "center"
+            valign: "middle"
         MyButton:
             id: nameButton
             background_normal:''
         Label:
-            id: statusLabel
+            id: bottomLabel
+            font_size: self.parent.height*0.05
 #         Label:
 #             text: 'Keep typing.  Tap your name when you see it.'
         BoxLayout:
@@ -455,14 +458,15 @@
             size_hint_y: None
             height: 40
             Label:
-                text: 'Event/O.P. Start Date:'
+                text: 'Event Start Date:'
             DatePicker:
                 id: eventStartDate
+        BoxLayout:
+            size_hint_y: None
+            height: 40
             Label:
-                text: 'Start Time:'
+                text: 'Event Start Time:'
             TimePicker:
-                hours: 2
-                minutes: 20
                 id: eventStartTime
         Label:
             size_hint: None,None

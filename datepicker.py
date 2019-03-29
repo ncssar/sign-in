@@ -73,6 +73,10 @@ class DatePicker(TextInput):
         pHint: 0.7,0.4 
     would result in a size_hint of 0.7,0.4 being used to create the popup
     """
+    
+    # keep a somewhat-calendar-like aspect ratio: hints will be different
+    #  based on screen aspect ratio - calculate at popup time instead of here
+    #  in case window has been resized after opening
     pHint_x = NumericProperty(0.7)
     pHint_y = NumericProperty(0.7)
     pHint = ReferenceListProperty(pHint_x ,pHint_y)
@@ -101,7 +105,11 @@ class DatePicker(TextInput):
         Open popup if textinput focused, 
         and regardless update the popup size_hint 
         """
-        self.popup.size_hint=self.pHint        
+        
+        self.popup.size_hint=None,None
+        self.popup.width=min(Window.width*0.9,600)
+        self.popup.height=self.popup.width*0.75 # always use a 4:3 aspect ratio
+              
         if val:
             # Automatically dismiss the keyboard 
             # that results from the textInput 

@@ -49,7 +49,7 @@ requirements = python3,kivy,pyjnius,jnius
 # requirements.source.kivy = ../../kivy
 
 # (list) Garden requirements
-#garden_requirements =
+#garden_requirements = circularLayout
 
 # (str) Presplash of the application
 #presplash.filename = %(source.dir)s/data/presplash.png

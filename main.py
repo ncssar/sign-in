@@ -29,6 +29,8 @@ Config.set('kivy','log_dir','log')
 Config.set('kivy','log_enable',1)
 Config.set('kivy','log_level','info')
 Config.set('kivy','log_maxfiles',5)
+Config.set('graphics','width','505')
+Config.set('graphics','height','800')
 
 import time
 import csv
@@ -197,7 +199,7 @@ class signinApp(App):
         self.keypad.ids.detailsbutton.opacity=0
         self.keypad.ids.detailsbutton.disabled=True
         self.typed=""
-        self.keypad.ids.statusLabel.text=""
+        self.keypad.ids.topLabel.text=""
         self.hide()
         self.adminMode=False
     
@@ -209,20 +211,20 @@ class signinApp(App):
         self.keypad.ids.detailsbutton.disabled=False
         self.keypad.ids.nameButton.background_color=(1,0.6,0,1)
         self.keypad.ids.nameButton.text="Admin Mode"
-        self.keypad.ids.statusLabel.text="(tap above to exit)"
+        self.keypad.ids.bottomLabel.text="(tap above to exit)"
         self.keypad.ids.topLabel.text=""
         self.adminMode=True
     
     def hide(self):
-        self.keypad.ids.topLabel.opacity=0
-        self.keypad.ids.topLabel.height=0
+        self.keypad.ids.bottomLabel.opacity=0
+        self.keypad.ids.bottomLabel.height=0
         self.keypad.ids.nameButton.text=self.defaultNameButtonText
         self.keypad.ids.nameButton.background_color=(0,0,0,0)
 
     def show(self):
-        self.keypad.ids.topLabel.opacity=1
-        self.keypad.ids.topLabel.height=100
-        self.keypad.ids.topLabel.text="You entered: "+self.typed
+        self.keypad.ids.bottomLabel.opacity=1
+        self.keypad.ids.bottomLabel.height=100
+        self.keypad.ids.bottomLabel.text="You entered: "+self.typed
 
     def setKeepScreenOn(self):
         PythonActivity.toastError("setKeepScreenOn called")
@@ -346,13 +348,20 @@ class signinApp(App):
         if not os.path.isdir(dirname):
             self.textpopup("ERROR: specified CSV directory "+dirname+" is not a valid directory.")
             return rval
-        Logger.info("beginning scan for valid CSV files in directory "+dirname)
+#         Logger.info("beginning scan for valid CSV files in directory "+dirname)
         for file in os.listdir(dirname):
+#             Logger.info("file:"+str(file))
             if file.endswith(".csv"):
+#                 Logger.info("  csvfile:"+str(file))
                 path=os.path.join(dirname,file)
-                with open(path) as myFile:
+#                 Logger.info("  path:"+str(path))
+                # use errors='ignore' to skip errors about grave accent (utf-8 0xb4)
+                with open(path,'r',errors='ignore') as myFile:
+#                     Logger.info("  opened")
                     if '## NCSSAR Sign-in Sheet' in myFile.read():
+#                         Logger.info("    yup its a valid csv file")
                         rval.append(path)
+#         Logger.info("complete list:"+str(rval))
         return rval
         
     def scanForRosters(self,dirname=None):
@@ -362,11 +371,12 @@ class signinApp(App):
         if not os.path.isdir(dirname):
             self.textpopup("ERROR: specified roster directory "+dirname+" is not a valid directory.")
             return rval
-        Logger.info("beginning scan for valid roster files in directory "+dirname)
+#         Logger.info("beginning scan for valid roster files in directory "+dirname)
         for file in os.listdir(dirname):
             if file.endswith(".csv"):
                 path=os.path.join(dirname,file)
-                with open(path) as myFile:
+                # use errors='ignore' to skip errors about grave accent (utf-8 0xb4)
+                with open(path,'r',errors='ignore') as myFile:
                     if '## Sign-in Roster' in myFile.read():
                         rval.append(path)
         return rval
@@ -602,7 +612,7 @@ class signinApp(App):
 #         self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
         self.typed=''
         self.hide()
-        self.keypad.ids.statusLabel.text=""
+        self.keypad.ids.topLabel.text=""
         self.sm.current='keypad'
         if self.adminMode:
             self.exitAdminMode()
@@ -719,9 +729,13 @@ class signinApp(App):
             Logger.info("  typed="+self.typed)
             
             if self.typed=="":
-                self.keypad.ids.statusLabel.text=""
+                self.keypad.ids.topLabel.text=""
             else:
-                self.setTextToFit(self.keypad.ids.statusLabel,"Keep typing. Tap your name when you see it.")
+#                 self.keypad.ids.statusLabel.text="[size={small}]Keep typing.\n[/size][size={large}]TAP YOUR NAME\n[/size][size={small}]when you see it.[/size]"
+                big=int(self.keypad.height*0.05)
+                small=int(big*0.4)
+                self.keypad.ids.topLabel.text="[size="+str(small)+"]Keep typing.\n[/size][size="+str(big)+"][i]TAP YOUR NAME[/i][/size][size="+str(small)+"]\nwhen you see it.[/size]"
+#                 self.setTextToFit(self.keypad.ids.statusLabel,"Keep typing. Tap your name when you see it.")
 #                 self.keypad.ids.statusLabel.text="Keep typing. Tap your name when you see it."
                 
             # do the lookup
