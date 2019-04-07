@@ -773,7 +773,7 @@ class signinApp(App):
                 self.sm.current='lookup'
             else:
                 self.sm.current='keypad'
-        else: # a different button
+        elif self.typed!="": # a different button, with a non-blank typed value
             id=self.typed
             Logger.info("  other key pressed.  id="+str(id))
 #             idText=str(id)
