@@ -89,6 +89,15 @@ if platform in ('android'):
     Context=autoclass('android.content.Context')
     DownloadManager=autoclass('android.app.DownloadManager')
 
+def sortSecond(val):
+    return val[1]
+
+def toast(text):
+    if platform in ('android'):
+        PythonActivity.toastError(text)
+    else:
+        Logger.info("TOAST:"+text)
+
 class signinApp(App):
     def build(self):
         Logger.info("build starting...")
@@ -150,13 +159,13 @@ class signinApp(App):
         self.typed=''
         self.finalized='NO'
         self.details.rosterFileName=self.rosterFileName
+        self.startTime=time.time()
         self.readRoster()
 #         self.setupAlphaGrouping()
-        self.startTime=time.time()
 #         self.clocktext=self.keypad.ids.clocktext
 #         Clock.schedule_interval(self.clocktext.update,1)
         self.sm.current='details'
-        Logger.info("Valid CSV files:"+str(self.scanForCSV()))
+        self.recoverIfNeeded()
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
         return self.sm
 
@@ -180,6 +189,27 @@ class signinApp(App):
         elif 31<key<127: # letter or number, regardless of shift key
             self.keyDown(chr(key)) # if not esc or bs, emulate a button press of the same letter/number
         return True
+    
+    def recoverIfNeeded(self):
+        # 1. check for files in the data dir with modification date within 24 hours
+        # 2. of those, check to see which are not finalized
+        # 3. if just one is not finalized, and it's the most recent one, load it
+        # 4. if more than one is not finalized, show a pick box to let user
+        #      select which one to restore
+        # 5. if everything within the last 24 hours is finalized, do not load anything
+        
+        Logger.info("entering recoverIfNeeded")
+        csvList=self.scanForCSV()
+        Logger.info("Valid CSV files:"+str(csvList))
+#         each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
+        csvCandidates=[x for x in csvList if self.startTime-x[1]<86400 and not x[4]]
+        csvCandidates.sort(key=sortSecond)
+        Logger.info("Candidates for recover:"+str(csvCandidates))
+        if len(csvCandidates)>>0:
+            Logger.info("Reading "+csvCandidates[0][0])
+            self.readCSV(csvCandidates[0][0])
+            self.switchToBlankKeypad()
+            toast("Automatically recovering:\n"+csvCandidates[0][2]+"\nEvent started:"+str(csvCandidates[0][3]))
     
     def lookupEnter(self):
         Logger.info("lookupEnter called")
@@ -227,14 +257,14 @@ class signinApp(App):
         self.keypad.ids.bottomLabel.text="You entered: "+self.typed
 
     def setKeepScreenOn(self):
-        PythonActivity.toastError("setKeepScreenOn called")
+        toast("setKeepScreenOn called")
         pass
 #         View = autoclass('android.view.View') # to avoid JVM exception re: original thread
 #         Params = autoclass('android.view.WindowManager$LayoutParams')
 #         PythonActivity.mActivity.getWindow().addFlags(Params.FLAG_KEEP_SCREEN_ON)
         
     def clearKeepScreenOn(self):
-        PythonActivity.toastError("clearKeepScreenOn called")
+        toast("clearKeepScreenOn called")
         pass
 #         View = autoclass('android.view.View') # to avoid JVM exception re: original thread
 #         Params = autoclass('android.view.WindowManager$LayoutParams')
@@ -329,19 +359,20 @@ class signinApp(App):
         except PermissionError as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            PythonActivity.toastError("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
-            PythonActivity.toastError("File not written: "+str(ex))
+            toast("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
+            toast("File not written: "+str(ex))
         except Exception as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            PythonActivity.toastError("File not written: "+str(ex))
+            toast("File not written: "+str(ex))
         else:
             Logger.info("Download successful")
             DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
             DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
-            PythonActivity.toastError("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
+            toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
  
     def scanForCSV(self,dirname=None):
+        # return a list of lists: each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
         rval=[]
         if not dirname:
             dirname=self.csvDir
@@ -356,12 +387,23 @@ class signinApp(App):
                 path=os.path.join(dirname,file)
 #                 Logger.info("  path:"+str(path))
                 # use errors='ignore' to skip errors about grave accent (utf-8 0xb4)
-                with open(path,'r',errors='ignore') as myFile:
+                with open(path,'r',errors='ignore') as csvFile:
 #                     Logger.info("  opened")
-                    if '## NCSSAR Sign-in Sheet' in myFile.read():
+                    if '## NCSSAR Sign-in Sheet' in csvFile.read():
 #                         Logger.info("    yup its a valid csv file")
-                        rval.append(path)
-#         Logger.info("complete list:"+str(rval))
+                        csvReader=csv.reader(csvFile)
+                        name=""
+                        start=""
+                        finalized=False
+                        for row in csvReader:
+                            if row[0].startswith("## Event Name:"):
+                                name=row[0].split(':')[1]
+                            elif row[0].startswith("## Event Date and Start Time:"):
+                                start=row[0].split(':')[1]
+                            elif row[0].startswith("## end of list; FINALIZED:"):
+                                finalized=row[0].split(':')[1]==" YES" # True or False
+                        rval.append([path,os.path.getmtime(path),name,start,finalized])
+        Logger.info("complete list:"+str(rval))
         return rval
         
     def scanForRosters(self,dirname=None):
@@ -411,12 +453,16 @@ class signinApp(App):
             Logger.info(str(self.signInList))
     
     def updateCSVFileName(self):
-#         f="roster"
-#         if self.details.ids.eventNameField.text!="":
-#             f=f+"_"+self.details.ids.eventNameField.text
-#         if self.
-        pass
-
+        f="sign-in"
+        if self.details.ids.eventNameField.text!="":
+            f=f+"_"+self.details.ids.eventNameField.text
+        f=f+"_"+self.details.ids.eventStartDate.text+"_"+self.details.ids.eventStartTime.text
+        f=f+".csv"
+        f=f.replace(" ","_") # do not have spaces in filename
+        f=f.replace(":","") # colon will break the filename on Windows; it's already 24h time
+        Logger.info("updated CSV filename:"+f)
+        self.csvFileName=os.path.join(self.csvDir,f)
+        
     def writeCSV(self,rotate=True,download=False):
         self.updateCSVFileName()
         # rotate first, since it moves the base file to .bak1
