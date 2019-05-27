@@ -275,6 +275,8 @@ class signinApp(App):
 #  master roster document; relevant certifications will result in questions
 #   "are you ready to deploy as <cert>?" during sign-in
     def readRoster(self):
+        self.nextXID=1 # note this means the X# IDs will reset with each roster load
+        # which could be a problem if a roster is loaded when people are already signed in
         self.roster={}
         try:
             Logger.info("reading roster file:"+self.details.rosterFileName)
@@ -290,9 +292,18 @@ class signinApp(App):
                 csvReader=csv.reader(rosterFile)
                 Logger.info("opened...")
                 for row in csvReader:
+                    # critera for adding a row to the roster:
+                    #  row[7] (DOE = Date Of Entry) must be non-blank
+                    #  so if row[0] (ID) is blank, assign a unique ID here 
+                    #   to allow the rest of this app to work.  Start with 'X1'.
 #                     Logger.info("row:"+str(row[0])+":"+row[1])
                     # if the first token has any digits, add it to the roster
-                    if any(i.isdigit() for i in row[0]):
+                    if row[7] not in ("","DOE"): # skip blanks and the header
+#                     if any(i.isdigit() for i in row[0]):
+                        if row[0]=="":
+                            row[0]="X"+str(self.nextXID)
+                            Logger.info("  no ID exists for "+row[1]+": assigning ID "+row[0])
+                            self.nextXID=self.nextXID+1
                         self.roster[row[0]]=[row[1],row[5]]
                         Logger.info("adding:"+str(self.roster[row[0]]))
                 self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
@@ -331,11 +342,30 @@ class signinApp(App):
 
     def getName(self,id):
         return self.roster.get(id,"")[0]
+    
+    def getId(self,name):
+        Logger.info("looking up ID for "+name)
+#         i=self.roster.keys()[self.roster.values().index(name)]
+#         i=[item for item in self.roster.items() if item[1]==name][0][0]
+        Logger.info("Roster:"+str(self.roster))
+        try:
+            key=next(key for key,value in self.roster.items() if value[0]==name)
+        except:
+            key=""
+        Logger.info("   key="+str(key))
+        return str(key)
+#         Logger.info("   i="+str(i))
+        # note this returns the >first< index, and dicts are not ordered,
+        #  so this will only work as expected if all values are unique
+        # see https://stackoverflow.com/a/11658633/3577105
+#         return str(i)
         
     def getIdText(self,id):
         idText=str(id)
         if id.isdigit():
             idText="SAR "+str(id)
+        if str(id).startswith("X"): # no ID assigned to this person on the roster
+            idText=""
         return idText
     
     def getCerts(self,id):
@@ -665,7 +695,8 @@ class signinApp(App):
     
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
-        return len([x for x in self.signInList if x[4]==0])
+        Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
+        return len([x for x in self.signInList if x[4]==0 or x[4]=='--'])
     
     def getTotalAttendingCount(self,*Args):
         # get the number of unique IDs in signInList
@@ -674,7 +705,15 @@ class signinApp(App):
     def showList(self,*args):
         Logger.info("showList called")
         self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
-        self.theList.bigList=[str(x) for entry in self.signInList for x in entry[0:6]]
+        # recycleview needs a single list of strings; it divides into rows every nth element
+#         self.theList.bigList=[str(x) for entry in self.signInList for x in entry[0:6]]
+        self.theList.bigList=[]
+        for entry in self.signInList:
+            row=copy.deepcopy(entry[0:6])
+            # show blank ID for X# entries (folks without assigned ID in the roster)
+            if str(row[0]).startswith('X'):
+                row[0]=""
+            self.theList.bigList=self.theList.bigList+row
         self.sm.transition.direction='up'
         self.sm.current='theList'
         self.sm.transition.direction='down'
@@ -685,7 +724,15 @@ class signinApp(App):
         self.sm.transition.direction='down'
         
     def showLookup(self,*args):
-        self.lookup.rosterList=sorted([str(val[0])+" : "+str(key) for key,val in self.roster.items()])
+#         self.lookup.rosterList=sorted([str(val[0])+" : "+str(key) for key,val in self.roster.items()])
+        self.lookup.rosterList=[]
+        for key,val in self.roster.items():
+            if str(key).startswith("X"):
+                suffix=""
+            else:
+                suffix=" : "+str(key)
+            self.lookup.rosterList.append(str(val[0])+suffix)
+        self.lookup.rosterList.sort()
 #         Logger.info(str(self.lookup.rosterList))
         self.sm.transition.direction='left'
         self.sm.current='lookup'
@@ -947,7 +994,7 @@ class signinApp(App):
                 # fit the text again after the transition is done, since the widget
                 #  size (and therefore the text height) is wacky until the screen has
                 #  been displayed for the first time
-                self.thankyou.on_enter=self.thankyouNameTextUpdate 
+                self.thankyou.on_enter=self.thankyouNameTextUpdate
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
 #                 self.exportList=copy.deepcopy(self.signInList)
@@ -1120,7 +1167,10 @@ class ComboEdit(TextInput):
 
     def on_select(self, *args):
         self.text = args[1]
-        [name,id]=self.text.split(" : ")
+        try:
+            [name,id]=self.text.split(" : ")
+        except:
+            [name,id]=[self.text,theApp.getId(self.text)]
         theApp.keyDown(id[-1]) # mimic the final character of the ID, to trigger the lookup
         theApp.typed=id
         Logger.info("calling keyDown: typed="+theApp.typed+"  name="+name+"  id="+id)
