@@ -116,7 +116,10 @@ class signinApp(App):
 #         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
         if platform in ('windows'):
             self.downloadDir=os.path.join(os.path.expanduser('~'),"Downloads")
-            self.rosterDir=self.downloadDir
+            # downloadDir and csvDir cannot be the same - if they are, you get
+            #  a warning during download when it tries to copy the file from
+            #  csvDir to downloadDir, obviously
+            self.rosterDir=os.path.join(os.path.expanduser('~'),"Documents")
             self.csvDir=self.rosterDir
         else:
 #             self.rosterDir="/storage/emulated/0/Download"
@@ -157,7 +160,7 @@ class signinApp(App):
 #         self.exitAdminMode()
         self.enterAdminMode()
         self.typed=''
-        self.finalized='NO'
+        self.finalized=False
         self.details.rosterFileName=self.rosterFileName
         self.startTime=time.time()
         self.readRoster()
@@ -204,6 +207,7 @@ class signinApp(App):
 #         each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
         csvCandidates=[x for x in csvList if self.startTime-x[1]<86400 and not x[4]]
         csvCandidates.sort(key=sortSecond)
+        csvCandidates.reverse() # most recent first, i.e. descending order
         Logger.info("Candidates for recover:"+str(csvCandidates))
         if len(csvCandidates)>>0:
             Logger.info("Reading "+csvCandidates[0][0])
@@ -368,6 +372,12 @@ class signinApp(App):
             idText=""
         return idText
     
+    def getFinalizedText(self):
+        if self.finalized:
+            return "YES"
+        else:
+            return "NO"
+    
     def getCerts(self,id):
         certs=[]
         if self.roster[id]:
@@ -397,9 +407,10 @@ class signinApp(App):
             toast("File not written: "+str(ex))
         else:
             Logger.info("Download successful")
-            DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
-            DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
-            toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
+            if platform in ('android'):
+                DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
+                DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
+                toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
  
     def scanForCSV(self,dirname=None):
         # return a list of lists: each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
@@ -419,21 +430,25 @@ class signinApp(App):
                 # use errors='ignore' to skip errors about grave accent (utf-8 0xb4)
                 with open(path,'r',errors='ignore') as csvFile:
 #                     Logger.info("  opened")
-                    if '## NCSSAR Sign-in Sheet' in csvFile.read():
-#                         Logger.info("    yup its a valid csv file")
-                        csvReader=csv.reader(csvFile)
-                        name=""
-                        start=""
-                        finalized=False
-                        for row in csvReader:
-                            if row[0].startswith("## Event Name:"):
-                                name=row[0].split(':')[1]
-                            elif row[0].startswith("## Event Date and Start Time:"):
-                                start=row[0].split(':')[1]
-                            elif row[0].startswith("## end of list; FINALIZED:"):
-                                finalized=row[0].split(':')[1]==" YES" # True or False
+                    valid=False
+                    finalized=False
+                    name=""
+                    start=""
+                    for line in csvFile:
+                        if line.startswith('## NCSSAR Sign-in Sheet'):
+                            valid=True
+                        elif line.startswith('## Event Name:'):
+                            name=line.split(':')[1]
+                        elif line.startswith('## Event Date and Start Time:'):
+                            start=line.split(':')[1]
+                        elif line.startswith('## end of list; FINALIZED:'):
+#                             Logger.info("finalized line:"+line)
+                            finalized=line.rstrip().split(':')[1]==" YES" # True or False
+#                             Logger.info("   finalized="+str(finalized))
+                    if valid:
                         rval.append([path,os.path.getmtime(path),name,start,finalized])
-        Logger.info("complete list:"+str(rval))
+                    csvFile.close()
+#         Logger.info("complete list:"+str(rval))
         return rval
         
     def scanForRosters(self,dirname=None):
@@ -522,7 +537,7 @@ class signinApp(App):
 #                 # csv apparently knows to wrap the string in quotes only if the
 #                 #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
-            csvWriter.writerow(["## end of list; FINALIZED: "+self.finalized])
+            csvWriter.writerow(["## end of list; FINALIZED: "+self.getFinalizedText()])
         if download and os.path.isfile(self.csvFileName):
             self.downloadFile(self.csvFileName,"text/csv")
 
@@ -541,7 +556,11 @@ class signinApp(App):
         self.export()
     
     def export(self):
-        self.writeCSV(download=True)
+        # exporting should not cause a file rotation; if it did, then the most
+        #  recent backup woult be the same as the most recent file except with
+        #  finalize=NO meaning it would be a candidate for auto-recover, which
+        #  we do not want.
+        self.writeCSV(download=True,rotate=False)
         self.writePDF(download=True)
         
 #     def writePDFHeaderFooter(self,canvas,doc):
