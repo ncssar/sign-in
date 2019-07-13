@@ -37,6 +37,7 @@ import csv
 import os
 import copy
 import shutil
+import sqlite3
 
 # from reportlab.lib import colors,utils
 # from reportlab.lib.pagesizes import letter,landscape
@@ -170,8 +171,28 @@ class signinApp(App):
         self.sm.current='details'
         self.recoverIfNeeded()
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
+        
+        self.initSql()
         return self.sm
 
+    def initSql(self):
+        self.con=sqlite3.connect('test.db')
+        with self.con:
+            self.cur=self.con.cursor()
+            self.cur.execute("CREATE TABLE IF NOT EXISTS SignIn("
+                "ID TEXT,"
+                "Name TEXT,"
+                "Agency TEXT,"
+                "Resources TEXT,"
+                "TimeIn TEXT,"
+                "TimeOut TEXT,"
+                "TotalTime TEXT,"
+                "EpochIn FLOAT,"
+                "EpochOut FLOAT,"
+                "TotalSec FLOAT,"
+                "CellNum TEXT,"
+                "Status TEXT)")
+            
     def on_keyboard(self,window,key,*args):
 #         Logger.info("key pressed:"+str(key))
         if key==27: # esc key, or android 'back' button
@@ -481,9 +502,9 @@ class signinApp(App):
                 if len(row)==0: # skip any blank rows
                     continue
                 if not row[0].startswith("#") and row[0]!="ID": # prune comment lines and header
-                    row[6]=float(row[6]) # use the epoch sec for time-in
-                    row[7]=float(row[7]) # use the epoch sec for time-out
-                    row[8]=float(row[8]) # use the number of sec for total time
+                    row[7]=float(row[7]) # use the epoch sec for time-in
+                    row[8]=float(row[8]) # use the epoch sec for time-out
+                    row[9]=float(row[9]) # use the number of sec for total time
                     self.signInList.append(row)
                 elif row[0].startswith("## Event Date and Start Time:"):
                     pass
@@ -540,6 +561,11 @@ class signinApp(App):
             csvWriter.writerow(["## end of list; FINALIZED: "+self.getFinalizedText()])
         if download and os.path.isfile(self.csvFileName):
             self.downloadFile(self.csvFileName,"text/csv")
+        for entry in self.signInList:
+            q="INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry)
+            print("Executing query: "+q)
+            self.cur.execute(q)
+        self.con.commit()
 
     def rotateCSV(self,depth=5):
         # move e.g. 4 to 5, then 3 to 4, then 2 to 3, then 1 to 2, then <base> to 1
@@ -721,7 +747,7 @@ class signinApp(App):
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
         Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
-        return len([x for x in self.signInList if x[4]==0 or x[4]=='--'])
+        return len([x for x in self.signInList if x[5]==0 or x[5]=='--'])
     
     def getTotalAttendingCount(self,*Args):
         # get the number of unique IDs in signInList
@@ -731,10 +757,10 @@ class signinApp(App):
         Logger.info("showList called")
         self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
         # recycleview needs a single list of strings; it divides into rows every nth element
-#         self.theList.bigList=[str(x) for entry in self.signInList for x in entry[0:6]]
+#         self.theList.bigList=[str(x) for entry in self.signInList for x in entry[0:7]]
         self.theList.bigList=[]
         for entry in self.signInList:
-            row=copy.deepcopy(entry[0:6])
+            row=copy.deepcopy(entry[0:7])
             # show blank ID for X# entries (folks without assigned ID in the roster)
             if str(row[0]).startswith('X'):
                 row[0]=""
@@ -948,7 +974,7 @@ class signinApp(App):
                 else: # already signed out
                     text=""
                     for k in ii: # build the full string of all previous sign-in / sign-out pairs
-                        text=text+"In: "+self.timeStr(self.signInList[k][3])+"   Out: "+self.timeStr(self.signInList[k][4])+"   Total: "+self.timeStr(self.signInList[k][5])+"\n"
+                        text=text+"In: "+self.timeStr(self.signInList[k][4])+"   Out: "+self.timeStr(self.signInList[k][5])+"   Total: "+self.timeStr(self.signInList[k][6])+"\n"
 #                     self.alreadysignedout.ids.nameLabel.text=self.getName(id)
                     self.setTextToFit(self.alreadysignedout.ids.nameLabel,self.getName(id))
                     # fit the text again after the transition is done, since the widget
@@ -981,7 +1007,7 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                self.signInList.append([id,name,','.join(certs),self.timeStr(t),"--","--",t,0,0])
+                self.signInList.append([id,name,agency','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
