@@ -165,8 +165,8 @@ class signinApp(App):
         self.startTime=time.time()
         self.readRoster()
 #         self.setupAlphaGrouping()
-#         self.clocktext=self.keypad.ids.clocktext
-#         Clock.schedule_interval(self.clocktext.update,1)
+        self.clocktext=self.keypad.ids.clocktext
+        Clock.schedule_interval(self.clocktext.update,1)
         self.sm.current='details'
         self.recoverIfNeeded()
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
@@ -705,12 +705,18 @@ class signinApp(App):
     
     def switchToBlankKeypad(self,*args):
 #         self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
+        self.keypad.ids.headerLabel.text=" Total: "+str(self.getTotalAttendingCount())+"   Here: "+str(self.getCurrentlySignedInCount())
         self.typed=''
         self.hide()
-        self.keypad.ids.topLabel.text=""
         self.sm.current='keypad'
         if self.adminMode:
             self.exitAdminMode()
+        if self.getCurrentlySignedInCount()<1:
+            self.keypad.ids.topLabel.text="READY TO FINALIZE"
+            self.keypad.ids.topLabel.background_color=(0,0,0.5,1)
+        else:
+            self.keypad.ids.topLabel.text=""
+
     
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out

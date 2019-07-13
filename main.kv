@@ -100,12 +100,15 @@
         orientation: 'vertical'
         BoxLayout:
             height:20
-#             Label:
-#                 id: headerLabel
-#                 text: ''
-#             ClockText:
-#                 id: clocktext
-#                 font_size: self.height*0.9
+            Label:
+                id: headerLabel
+                font_size: self.height*0.2
+                text: ''
+            Label:
+                size_hint_x: 0.8
+            ClockText:
+                id: clocktext
+                font_size: self.height*0.4
 #             Label:
 #                 size_hint_x: 0.8
             ListButton:
