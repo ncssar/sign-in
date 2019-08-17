@@ -42,7 +42,7 @@ version.filename = %(source.dir)s/main.py
 #  same-line comments appear in the python3 call like so:
 # Run '/usr/bin/python3 -m pythonforandroid.toolchain create --dist_name=buckshotApp --bootstrap=sdl2 --requirements=python3,kivy,pyjnius # for download-only test --arch armeabi-v7a --copy-libs --color=always --storage-dir="/mnt/c/Users/caver/Documents/GitHub/buckshotApp/.buildozer/android/platform/build"'
 ##################################################
-requirements = python3,kivy,pyjnius,jnius
+requirements = python3,sqlite3,kivy,pyjnius,jnius
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -94,7 +94,7 @@ fullscreen = 0
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK
 
 # (int) Android API to use
-android.api = 26
+android.api = 28
 
 # (int) Minimum API required. You will need to set the android.ndk.api to be as low as this value.
 android.minapi = 21
@@ -103,7 +103,7 @@ android.minapi = 21
 #android.sdk = 20
 
 # (str) Android NDK version to use
-android.ndk = 15c
+android.ndk = 17c
 
 # (int) Android NDK API to use (optional). This is the minimum API your app will support. 
 android.ndk_api = 21

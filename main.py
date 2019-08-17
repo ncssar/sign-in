@@ -19,6 +19,11 @@
 #
 # #############################################################################
 
+## csv file spec to interface with t-card program 8-16-19:
+## SARID, "NAME(LAST,FIRST)", AGENCY, RESOURCES, TIME-IN(HUMAN), TIME-OUT, TIME-DELTA, TIME-IN(EPOCH FLOAT),
+##         TIME-OUT, TIME-DELTA, CELL#, "STATUS(SignIn, SignOut, OnTcard, RmTcard)"
+##     Status exchange: SignIn from Sign-in program, acknowledge by OnTcard from Tcard
+##                      then, RmTcard from Tcard enabling SignOut at Sign-Out
 __version__ = '1.0'
 
 # perform any calls to Config.set before importing any kivy modules!
@@ -89,6 +94,15 @@ if platform in ('android'):
     mActivity=PythonActivity.mActivity
     Context=autoclass('android.content.Context')
     DownloadManager=autoclass('android.app.DownloadManager')
+    
+#     # SymmetricDS
+#     Logger.info("trace1")
+#     symmetricService=autoclass('org.jumpmind.symmetric.SymmetricService')
+#     Logger.info("trace2")
+#     arg=''
+#     Logger.info("trace3")
+#     symmetricService.start(mActivity,arg)
+#     Logger.info("trace4")
 
 def sortSecond(val):
     return val[1]
@@ -175,11 +189,18 @@ class signinApp(App):
         self.initSql()
         return self.sm
 
+    def q(self,query):
+        print("** EXECUTING QUERY: "+query)
+        self.cur.execute(query)
+        
     def initSql(self):
         self.con=sqlite3.connect('test.db')
         with self.con:
             self.cur=self.con.cursor()
-            self.cur.execute("CREATE TABLE IF NOT EXISTS SignIn("
+#             self.q("CREATE TABLE IF NOT EXISTS About("
+#                 "EventName TEXT,"
+#                 "")
+            self.q("CREATE TABLE IF NOT EXISTS SignIn("
                 "ID TEXT,"
                 "Name TEXT,"
                 "Agency TEXT,"
@@ -187,9 +208,9 @@ class signinApp(App):
                 "TimeIn TEXT,"
                 "TimeOut TEXT,"
                 "TotalTime TEXT,"
-                "EpochIn FLOAT,"
-                "EpochOut FLOAT,"
-                "TotalSec FLOAT,"
+                "EpochIn REAL,"
+                "EpochOut REAL,"
+                "TotalSec REAL,"
                 "CellNum TEXT,"
                 "Status TEXT)")
             
@@ -544,7 +565,7 @@ class signinApp(App):
             csvWriter.writerow(["## Event Type: "+self.details.eventType])
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
-            csvWriter.writerow(["ID","Name","Resource","In","Out","Total"])
+            csvWriter.writerow(["ID","Name","Agency","Resource","In","Out","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"])
             for entry in self.signInList:
 #                 # copy in, out, and total seconds to end of list
 #                 entry.append(entry[3])
@@ -561,12 +582,11 @@ class signinApp(App):
             csvWriter.writerow(["## end of list; FINALIZED: "+self.getFinalizedText()])
         if download and os.path.isfile(self.csvFileName):
             self.downloadFile(self.csvFileName,"text/csv")
+        self.q("DELETE FROM SignIn") # easiest code is to delete all rows and start from scratch
         for entry in self.signInList:
-            q="INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry)
-            print("Executing query: "+q)
-            self.cur.execute(q)
+            self.q("INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry))
         self.con.commit()
-
+        
     def rotateCSV(self,depth=5):
         # move e.g. 4 to 5, then 3 to 4, then 2 to 3, then 1 to 2, then <base> to 1
         Logger.info("rotateCSV called")
@@ -961,7 +981,7 @@ class signinApp(App):
 # #                         buttonsLayout.add_widget(goButton)
 # #                         self.layout.add_widget(buttonsLayout)
 #                     self.sm.current='signin'
-                elif entry[7]==0: # signed in but not signed out
+                elif entry[8]==0: # signed in but not signed out
                     self.setTextToFit(self.signout.ids.nameLabel,self.getName(id))
                     # fit the text again after the transition is done, since the widget
                     #  size (and therefore the text height) is wacky until the screen has
@@ -974,7 +994,7 @@ class signinApp(App):
                 else: # already signed out
                     text=""
                     for k in ii: # build the full string of all previous sign-in / sign-out pairs
-                        text=text+"In: "+self.timeStr(self.signInList[k][4])+"   Out: "+self.timeStr(self.signInList[k][5])+"   Total: "+self.timeStr(self.signInList[k][6])+"\n"
+                        text=text+"In: "+self.timeStr(self.signInList[k][5])+"   Out: "+self.timeStr(self.signInList[k][6])+"   Total: "+self.timeStr(self.signInList[k][7])+"\n"
 #                     self.alreadysignedout.ids.nameLabel.text=self.getName(id)
                     self.setTextToFit(self.alreadysignedout.ids.nameLabel,self.getName(id))
                     # fit the text again after the transition is done, since the widget
@@ -995,6 +1015,10 @@ class signinApp(App):
                 self.showSignIn(id)
             elif text=='Sign In Now':
                 name=self.getName(id)
+                # temporary hardcodes 8-16-19
+                agency="NCSSAR"
+                cellNum="123-456-7890"
+                status="SignIn"
                 idText=self.getIdText(id)
 #                 self.sm.current='signintype'
                 t=time.time()
@@ -1007,7 +1031,7 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                self.signInList.append([id,name,agency','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status])
+                self.signInList.append([id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status])
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -1032,13 +1056,16 @@ class signinApp(App):
 #                 self.writeCSV()
 #                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
-                inTime=entry[6]
+                #temporary hardcode 8-16-19
+                status="SignOut"
+                inTime=entry[7]
                 outTime=time.time()
                 totalTime=outTime-inTime
-                entry[4]=self.timeStr(outTime)
-                entry[5]=self.timeStr(totalTime)
-                entry[7]=outTime
-                entry[8]=totalTime
+                entry[5]=self.timeStr(outTime)
+                entry[6]=self.timeStr(totalTime)
+                entry[8]=outTime
+                entry[9]=totalTime
+                entry[11]="SignOut"
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)

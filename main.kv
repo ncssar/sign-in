@@ -352,13 +352,15 @@
             Label:
                 text: 'Name'
             Label:
+                text: 'Agency'
+            Label:
                 text: 'Resource'
             Label:
-                text: 'Time In'
+                text: 'In'
             Label:
-                text: 'Time Out'
+                text: 'Out'
             Label:
-                text: 'Total Time'
+                text: 'Total'
         BoxLayout:
             size_hint_y: 0.9
             RecycleView:
@@ -367,7 +369,7 @@
                 data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.bigList]
                 SelectableRecycleGridLayout:
                     id: theGridLayout
-                    cols: 6
+                    cols: 7
                     size_hint_y: None
                     default_size: None, dp(32)
                     default_size_hint: 1, None
