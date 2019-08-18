@@ -203,6 +203,10 @@
         Label:
             id: statusLabel
             font_size:self.height*app.defaultTextHeightMultiplier*1/2
+        Label:
+            id: certHeader
+            font_size:self.height*app.defaultTextHeightMultiplier*1/2
+            text: "Are you available to deploy as:"
         BoxLayout: # to be filled by relevant certifications at runtime
             id: certBox
             orientation: 'vertical'
@@ -473,6 +477,13 @@
                 text: 'Event Start Time:'
             TimePicker:
                 id: eventStartTime
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Label:
+                text: 'Auto-export on every entry?'
+            YesNoSwitch:
+                id: autoExport
         Label:
             size_hint: None,None
             height: 10

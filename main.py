@@ -113,6 +113,31 @@ def toast(text):
     else:
         Logger.info("TOAST:"+text)
 
+CERT_DICT={
+    "IC":"IC Team Member",
+    "DR":"Trailer Driver",
+    "K9":"K9 Handler",
+    "M":"Motorcycle Driver",
+    "R":"Ropes Team Member",
+    "EMT":"Emergency Medical Tech.",
+    "H":"Mounted Team Member",
+    "HT":"Hasty Team Member",
+    "SC":"Snow Cat Driver",
+    "PM":"Paramedic",
+    "SM":"Snowmobile Driver",
+    "N":"Nordic Team Member",
+    "UTV1":"UTV Type 1 Driver",
+    "ATV1":"ATV Type 1 Driver",
+    "CI":"Crisis Team Member",
+    "MT":"Tracking Team Member",
+    "E":"Evidence Team Member",
+    "D":"Dive Team Member"}
+
+# for searches, the following certs will prompt the member as to whether
+#  they are ready to deploy as that resource type; include
+#  resource types that need special gear (dog, horse, atv, extra clothing)
+CERTS_NEED_PROMPT=["K9","M","H","SC","SM","N","ATV1","D"]
+    
 class signinApp(App):
     def build(self):
         Logger.info("build starting...")
@@ -124,7 +149,6 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
-        self.possibleCerts=["K9A","K9T","M","S","K9","DR"]
         self.roster={}
         self.signInList=[]
 #         self.exportList=[]
@@ -427,13 +451,14 @@ class signinApp(App):
             #  removing blank strings due to back-to-back delimiters due to loose syntax
             idCerts=[x for x in self.roster[id][1].replace(' ',',').split(',') if x]
             Logger.info("roster certs for "+id+":"+str(idCerts)+"  (raw="+str(self.roster[id][1])+")")
-            for possibleCert in self.possibleCerts:
+            for possibleCert in CERTS_NEED_PROMPT:
                 if possibleCert in idCerts:
+#                     certs.append(CERT_DICT[possibleCert])
                     certs.append(possibleCert)
         Logger.info("Certifications for "+id+":"+str(certs))
         return certs
 
-    def downloadFile(self,filename,mimetype):
+    def downloadFile(self,filename,mimetype,toast=True):
         path=self.downloadDir+"/"+os.path.basename(filename)
         Logger.info("Downloading i.e. copying from "+filename+" to "+path)
         try:
@@ -441,18 +466,21 @@ class signinApp(App):
         except PermissionError as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            toast("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
-            toast("File not written: "+str(ex))
+            if toast:
+                toast("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
+                toast("File not written: "+str(ex))
         except Exception as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            toast("File not written: "+str(ex))
+            if toast:
+                toast("File not written: "+str(ex))
         else:
             Logger.info("Download successful")
             if platform in ('android'):
                 DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
                 DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
-                toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
+                if toast:
+                    toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
  
     def scanForCSV(self,dirname=None):
         # return a list of lists: each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
@@ -580,8 +608,12 @@ class signinApp(App):
 #                 #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.getFinalizedText()])
+        toast=True
+        if self.details.ids.autoExport.active:
+            download=True
+            toast=False
         if download and os.path.isfile(self.csvFileName):
-            self.downloadFile(self.csvFileName,"text/csv")
+            self.downloadFile(self.csvFileName,"text/csv",toast)
         self.q("DELETE FROM SignIn") # easiest code is to delete all rows and start from scratch
         for entry in self.signInList:
             self.q("INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry))
@@ -834,11 +866,14 @@ class signinApp(App):
         self.signin.fromLookup=fromLookup
         certs=self.getCerts(id)
         self.signin.ids.certBox.clear_widgets()
-        if self.details.eventType=="Search":
+        self.signin.ids.certHeader.opacity=0
+        if self.details.eventType=="Search" and certs:
+            self.signin.ids.certHeader.opacity=1
             for cert in certs:
                 Logger.info("adding certification question for "+cert)
                 certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
-                certLabel=Label(text='Are you ready to deploy as '+cert+'?')
+#                 certLabel=Label(text=cert+'?',font_size=self.signin.ids.certHeader.font_size)
+                certLabel=Label(text=CERT_DICT[cert]+'?')
                 certSwitch=YesNoSwitch()
                 certSwitch.cert=cert # pass the cert name as a property of the switch
         #                         certSwitch.bind(active=self.certSwitchCB)
@@ -988,7 +1023,7 @@ class signinApp(App):
                     #  been displayed for the first time
                     self.signout.on_enter=self.signOutNameTextUpdate
                     self.signout.ids.idLabel.text=self.getIdText(id)
-                    self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[3])
+                    self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[4])
                     self.signout.fromLookup=fromLookup
                     self.sm.current='signout'
                 else: # already signed out
