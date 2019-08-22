@@ -423,6 +423,7 @@
             CheckBox:
                 id: meetingCheckBox
                 group: 'group'
+                active: root.eventType=='Meeting'
                 on_active: root.eventType='Meeting'
             Label:
                 text: 'Training'
@@ -430,6 +431,7 @@
             CheckBox:
                 id: trainingCheckBox
                 group: 'group'
+                active: root.eventType=='Training'
                 on_active: root.eventType='Training'
             Label:
                 text: 'Search'
@@ -437,6 +439,7 @@
             CheckBox:
                 id: searchCheckBox
                 group: 'group'
+                active: root.eventType=='Search'
                 on_active: root.eventType='Search'
             Label:
                 text: 'Other'
@@ -444,6 +447,7 @@
             CheckBox:
                 id: otherCheckBox
                 group: 'group'
+                active: root.eventType=='Other'
                 on_active: root.eventType='Other'
         BoxLayout:
             size_hint_y: None
@@ -453,6 +457,7 @@
             TextInput:
                 multiline: False
                 id: eventNameField
+                text: root.eventName
                 on_text: root.eventName=self.text
         BoxLayout:
             size_hint_y: None
@@ -462,6 +467,7 @@
             TextInput:
                 multiline: False
                 id: eventLocationField
+                text: root.eventLocation
                 on_text: root.eventLocation=self.text
         BoxLayout:
             size_hint_y: None

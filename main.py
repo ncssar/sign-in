@@ -43,6 +43,7 @@ import os
 import copy
 import shutil
 import sqlite3
+import re
 
 # from reportlab.lib import colors,utils
 # from reportlab.lib.pagesizes import letter,landscape
@@ -115,6 +116,7 @@ def toast(text):
 
 CERT_DICT={
     "IC":"IC Team Member",
+    "LD":"Field Team Leader",
     "DR":"Trailer Driver",
     "K9":"K9 Handler",
     "M":"Motorcycle Driver",
@@ -131,13 +133,14 @@ CERT_DICT={
     "CI":"Crisis Team Member",
     "MT":"Tracking Team Member",
     "E":"Evidence Team Member",
-    "D":"Dive Team Member"}
+    "D":"Dive Team Member",
+    "RN":"Registered Nurse"}
 
 # for searches, the following certs will prompt the member as to whether
 #  they are ready to deploy as that resource type; include
 #  resource types that need special gear (dog, horse, atv, extra clothing)
 CERTS_NEED_PROMPT=["K9","M","H","SC","SM","N","ATV1","D"]
-    
+
 class signinApp(App):
     def build(self):
         Logger.info("build starting...")
@@ -150,6 +153,11 @@ class signinApp(App):
         self.adminCode='925'
         self.adminMode=False
         self.roster={}
+        self.eventType="Meeting"
+        self.eventName=""
+        self.eventLocation=""
+        self.eventStartDate=""
+        self.eventStartTime=""
         self.signInList=[]
 #         self.exportList=[]
 #         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
@@ -164,7 +172,8 @@ class signinApp(App):
 #             self.rosterDir="/storage/emulated/0/Download"
             self.downloadDir="/storage/emulated/0/Download"
             self.csvDir=os.path.dirname(os.path.abspath(__file__))
-            self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
+#             self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
+            self.rosterDir=self.downloadDir # TO DO: implement a dir search tree
         self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
@@ -214,7 +223,7 @@ class signinApp(App):
         return self.sm
 
     def q(self,query):
-        print("** EXECUTING QUERY: "+query)
+#         Logger.info("** EXECUTING QUERY: "+str(query))
         self.cur.execute(query)
         
     def initSql(self):
@@ -361,14 +370,17 @@ class signinApp(App):
 #                 self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
                 csvReader=csv.reader(rosterFile)
                 Logger.info("opened...")
+                leoPattern=re.compile("[1234][TSEPDVN][0-9]+")
                 for row in csvReader:
                     # critera for adding a row to the roster:
-                    #  row[7] (DOE = Date Of Entry) must be non-blank
-                    #  so if row[0] (ID) is blank, assign a unique ID here 
+                    #  row[7] (DOE = Date Of Entry) must be non-blank (volunteers)
+                    #   OR
+                    #  row[0] must match [1234][TSEPDVN][0-9]+ (law enforcement)
+                    #  if row[0] (ID) is blank, assign a unique ID here 
                     #   to allow the rest of this app to work.  Start with 'X1'.
 #                     Logger.info("row:"+str(row[0])+":"+row[1])
                     # if the first token has any digits, add it to the roster
-                    if row[7] not in ("","DOE"): # skip blanks and the header
+                    if row[7] not in ("","DOE") or leoPattern.search(row[0]): # skip blanks and the header
 #                     if any(i.isdigit() for i in row[0]):
                         if row[0]=="":
                             row[0]="X"+str(self.nextXID)
@@ -445,41 +457,46 @@ class signinApp(App):
             return "NO"
     
     def getCerts(self,id):
-        certs=[]
+        # return a list of two lists: [[not-prompted],[prompted]] cert types
+        not_prompted=[]
+        prompted=[]
         if self.roster[id]:
             # parse the certifications field, using either space or comma as delimiter,
             #  removing blank strings due to back-to-back delimiters due to loose syntax
-            idCerts=[x for x in self.roster[id][1].replace(' ',',').split(',') if x]
-            Logger.info("roster certs for "+id+":"+str(idCerts)+"  (raw="+str(self.roster[id][1])+")")
-            for possibleCert in CERTS_NEED_PROMPT:
-                if possibleCert in idCerts:
+            allCerts=[x for x in self.roster[id][1].replace(' ',',').split(',') if x]
+            Logger.info("roster certs for "+id+":"+str(allCerts)+"  (raw="+str(self.roster[id][1])+")")
+            prompted=[x for x in allCerts if x in CERTS_NEED_PROMPT]
+            not_prompted=[x for x in allCerts if x not in prompted]
+#             for possibleCert in CERTS_NEED_PROMPT:
+#                 if possibleCert in idCerts:
 #                     certs.append(CERT_DICT[possibleCert])
-                    certs.append(possibleCert)
+#                     certs.append(possibleCert)
+        certs=[not_prompted,prompted]
         Logger.info("Certifications for "+id+":"+str(certs))
         return certs
 
-    def downloadFile(self,filename,mimetype,toast=True):
+    def downloadFile(self,filename,mimetype,doToast=True):
         path=self.downloadDir+"/"+os.path.basename(filename)
-        Logger.info("Downloading i.e. copying from "+filename+" to "+path)
+        Logger.info("Downloading i.e. copying from "+filename+" to "+path+" doToast:"+str(doToast))
         try:
             shutil.copy(filename,path)
         except PermissionError as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            if toast:
+            if doToast:
                 toast("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
                 toast("File not written: "+str(ex))
         except Exception as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            if toast:
+            if doToast:
                 toast("File not written: "+str(ex))
         else:
             Logger.info("Download successful")
             if platform in ('android'):
                 DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
                 DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
-                if toast:
+                if doToast:
                     toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
  
     def scanForCSV(self,dirname=None):
@@ -558,11 +575,18 @@ class signinApp(App):
                 elif row[0].startswith("## Event Date and Start Time:"):
                     pass
                 elif row[0].startswith("## Event Name:"):
-                    self.eventName=row[0].split(':')[1]
+                    self.details.eventName=row[0].split(': ')[1]
+                    Logger.info("event name:"+str(self.details.eventName))
                 elif row[0].startswith("## Event Type:"):
-                    self.eventType=row[0].split(':')[1]
+#                     Logger.info("  event type before read: "+str(self.eventType))
+                    self.details.eventType=row[0].split(': ')[1]
+#                     Logger.info("  event type after read: "+str(self.eventType))
+#                     cmd="self.details.ids."+self.eventType.lower()+"CheckBox.active=True"
+#                     Logger.info("cmd:"+str(cmd))
+#                     eval(cmd)
                 elif row[0].startswith("## Event Location:"):
-                    self.eventLocation=row[0].split(':')[1]
+                    self.details.eventLocation=row[0].split(': ')[1]
+                    Logger.info("event location:"+str(self.details.eventLocation))
 #             self.exportList=copy.deepcopy(self.signInList) # otherwise this only happens on sign in/out
             Logger.info(str(len(self.signInList))+" entries read")
             Logger.info(str(self.signInList))
@@ -578,7 +602,7 @@ class signinApp(App):
         Logger.info("updated CSV filename:"+f)
         self.csvFileName=os.path.join(self.csvDir,f)
         
-    def writeCSV(self,rotate=True,download=False):
+    def writeCSV(self,rotate=True,download=False,doToastOverride=False):
         self.updateCSVFileName()
         # rotate first, since it moves the base file to .bak1
         Logger.info("writeCSV called")
@@ -608,12 +632,12 @@ class signinApp(App):
 #                 #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.getFinalizedText()])
-        toast=True
+        doToast=True
         if self.details.ids.autoExport.active:
             download=True
-            toast=False
+            doToast=doToastOverride # toast if export button was hit, even if auto-export is on
         if download and os.path.isfile(self.csvFileName):
-            self.downloadFile(self.csvFileName,"text/csv",toast)
+            self.downloadFile(self.csvFileName,"text/csv",doToast)
         self.q("DELETE FROM SignIn") # easiest code is to delete all rows and start from scratch
         for entry in self.signInList:
             self.q("INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry))
@@ -638,7 +662,7 @@ class signinApp(App):
         #  recent backup woult be the same as the most recent file except with
         #  finalize=NO meaning it would be a candidate for auto-recover, which
         #  we do not want.
-        self.writeCSV(download=True,rotate=False)
+        self.writeCSV(download=True,rotate=False,doToastOverride=True)
         self.writePDF(download=True)
         
 #     def writePDFHeaderFooter(self,canvas,doc):
@@ -864,12 +888,12 @@ class signinApp(App):
         self.signin.on_enter=self.signInNameTextUpdate
         self.signin.ids.idLabel.text=self.getIdText(id)
         self.signin.fromLookup=fromLookup
-        certs=self.getCerts(id)
+        certsNeedPrompt=self.getCerts(id)[1]
         self.signin.ids.certBox.clear_widgets()
         self.signin.ids.certHeader.opacity=0
-        if self.details.eventType=="Search" and certs:
+        if self.details.eventType=="Search" and certsNeedPrompt:
             self.signin.ids.certHeader.opacity=1
-            for cert in certs:
+            for cert in certsNeedPrompt:
                 Logger.info("adding certification question for "+cert)
                 certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
 #                 certLabel=Label(text=cert+'?',font_size=self.signin.ids.certHeader.font_size)
@@ -1061,7 +1085,9 @@ class signinApp(App):
                 #  since objects are always inserted to the front of the children list,
                 #  the actual switch will be .children[0] as long as it was the
                 #  last widget inserted to its certLayout
-                certs=[certLayout.children[0].cert for certLayout in self.signin.ids.certBox.children if certLayout.children[0].active] 
+                certsNoPrompt=self.getCerts(id)[0]
+                certsPromptedYes=[certLayout.children[0].cert for certLayout in self.signin.ids.certBox.children if certLayout.children[0].active] 
+                certs=certsPromptedYes+certsNoPrompt
                 s=id+" "+name+" signed in"
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
