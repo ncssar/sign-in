@@ -366,7 +366,7 @@ class signinApp(App):
 #         Params = autoclass('android.view.WindowManager$LayoutParams')
 #         PythonActivity.mActivity.getWindow().clearFlags(Params.FLAG_KEEP_SCREEN_ON)
         
-# self.roster is a dictionary: key=ID, val=[name,certifications]
+# self.roster is a dictionary: key=ID, val=[name,certifications,cell#]
 #  where 'certs' is a string of the format "K9,M,DR," etc as specified in the
 #  master roster document; relevant certifications will result in questions
 #   "are you ready to deploy as <cert>?" during sign-in
@@ -403,7 +403,7 @@ class signinApp(App):
                             row[0]="X"+str(self.nextXID)
                             Logger.info("  no ID exists for "+row[1]+": assigning ID "+row[0])
                             self.nextXID=self.nextXID+1
-                        self.roster[row[0]]=[row[1],row[5]]
+                        self.roster[row[0]]=[row[1],row[5],row[3]]
                         Logger.info("adding:"+str(self.roster[row[0]]))
                 self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
         except Exception as e:
@@ -441,6 +441,9 @@ class signinApp(App):
 
     def getName(self,id):
         return self.roster.get(id,"")[0]
+    
+    def getCell(self,id):
+        return self.roster.get(id,"")[2]
     
     def getId(self,name):
         Logger.info("looking up ID for "+name)
@@ -1098,7 +1101,7 @@ class signinApp(App):
                 name=self.getName(id)
                 # temporary hardcodes 8-16-19
                 agency="NCSSAR"
-                cellNum="123-456-7890"
+                cellNum=self.getCell(id)
                 status="SignIn"
                 idText=self.getIdText(id)
 #                 self.sm.current='signintype'
