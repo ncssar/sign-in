@@ -92,15 +92,19 @@ class DatePicker(TextInput):
         self.text = today_date()
         # Calendar
         self.cal = CalendarWidget(as_popup=True, 
-                                  touch_switch=self.touch_switch)
+                                  touch_switch=self.touch_switch,
+                                  dp=self)
         # Popup
-        self.popup = Popup(content=self.cal, on_dismiss=self.update_value, 
+        # don't assume that dismiss should update the value; dismiss via escape
+        #  should not update the value; explicitly update the value then dismiss
+        #  when a date is clicked
+        self.popup = Popup(content=self.cal, 
                            title="")
         self.cal.parent_popup = self.popup
         
         self.bind(focus=self.show_popup)
         
-    def show_popup(self, isnt, val):
+    def show_popup(self, inst, val):
         """ 
         Open popup if textinput focused, 
         and regardless update the popup size_hint 
@@ -128,13 +132,14 @@ class DatePicker(TextInput):
 class CalendarWidget(RelativeLayout):
     """ Basic calendar widget """
     
-    def __init__(self, as_popup=False, touch_switch=False, *args, **kwargs):
+    def __init__(self, as_popup=False, touch_switch=False, dp=None, *args, **kwargs):
         super(CalendarWidget, self).__init__(*args, **kwargs)
         
         self.as_popup = as_popup
         self.touch_switch = touch_switch
         self.prepare_data()     
         self.init_ui()
+        self.dp=dp
         
     def init_ui(self):
         
@@ -231,6 +236,7 @@ class CalendarWidget(RelativeLayout):
         self.active_date[0] = int(inst.text)
                 
         if self.as_popup:
+            self.dp.update_value(self)
             self.parent_popup.dismiss()
         
     def go_prev(self, inst):

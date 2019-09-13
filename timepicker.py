@@ -115,7 +115,7 @@ Builder.load_string("""
                 background_color:.7,.7,.7,1
                 size_hint_x: 0.5
                 font_size: self.height * .8
-                on_press: root.parent.parent.parent.dismiss()
+                on_press: root.on_ok()
     FloatLayout:
         id: picker_container
         #size_hint_y: 2./3
@@ -548,7 +548,7 @@ class CircularTimePicker(BoxLayout):
         return self.ampm_format.format(am_color=amc, pm_color=pmc,am_size=ams,pm_size=pms)
     ampm_text = AliasProperty(_get_ampm_text, None, bind=("hours", "ampm_format", "_am"))
 
-    def __init__(self, as_popup=False, touch_switch=False, hours=False,minutes=False,*args, **kwargs):
+    def __init__(self, as_popup=False, touch_switch=False, hours=False,minutes=False,tp=None,*args, **kwargs):
         super(CircularTimePicker, self).__init__(*args, **kwargs)
         # use current (app startup time) as initial time; allow initial time to be specified as init args
         now=datetime.datetime.now()
@@ -564,6 +564,7 @@ class CircularTimePicker(BoxLayout):
             self._am = False
         else:
             self._am = True
+        self.tp=tp
 #         print("CTP init: hours="+str(self.hours)+" minutes="+str(self.minutes)+" am="+str(self._am))
         self.bind(time_list=self.on_time_list, picker=self._switch_picker, _am=self.on_ampm)
         self._h_picker = CircularHourPicker(val=self.hours%12)
@@ -600,6 +601,10 @@ class CircularTimePicker(BoxLayout):
             self.hours = hours
         elif self.picker == "minutes":
             self.minutes = self._picker.selected
+    
+    def on_ok(self):
+        self.tp.update_value(self)
+        self.parent_popup.dismiss()
 
     def on_time_list(self, *a):
         #print "TIME", self.time
@@ -701,13 +706,13 @@ class TimePicker(TextInput):
         # Calendar
 #         now=datetime.datetime.now()
         self.cal = CircularTimePicker(as_popup=True, 
-                                touch_switch=self.touch_switch,hours=self.hours,minutes=self.minutes)
+                                touch_switch=self.touch_switch,hours=self.hours,minutes=self.minutes,tp=self)
 #                                   touch_switch=self.touch_switch,hours=now.hour,minutes=now.minute)
 #         self.cal.hours=now.hour
 #         self.cal.minutes=now.minute
 #         self.cal._am=now.hour<<12
         # Popup
-        self.popup = Popup(content=self.cal, on_dismiss=self.update_value, 
+        self.popup = Popup(content=self.cal,
                             title="")
 #                            title="",size=(Window.width,600))
         self.cal.parent_popup = self.popup

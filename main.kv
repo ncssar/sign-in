@@ -476,6 +476,8 @@
                 text: 'Event Start Date:'
             DatePicker:
                 id: eventStartDate
+                text: root.eventStartDate
+                on_text: root.eventStartDate=self.text
         BoxLayout:
             size_hint_y: None
             height: 40
@@ -483,6 +485,8 @@
                 text: 'Event Start Time:'
             TimePicker:
                 id: eventStartTime
+                text: root.eventStartTime
+                on_text: root.eventStartTime=self.text
         BoxLayout:
             size_hint_y: None
             height: 40

@@ -43,8 +43,6 @@ import os
 import copy
 import shutil
 import sqlite3
-import re
-import datetime
 
 # from reportlab.lib import colors,utils
 # from reportlab.lib.pagesizes import letter,landscape
@@ -79,9 +77,8 @@ from kivy.core.window import Window
 # # from kivy.garden import datetimepicker
 # # DatePicker from https://github.com/Skucul/datepicker
 # from datepicker import DatePicker
-from datepicker import *
 # # TimePicker from https://github.com/Skucul/timepicker
-from timepicker import *
+# from timepicker import TimePicker
 
 from kivy.logger import Logger
 
@@ -116,33 +113,6 @@ def toast(text):
     else:
         Logger.info("TOAST:"+text)
 
-CERT_DICT={
-    "IC":"IC Team Member",
-    "LD":"Field Team Leader",
-    "DR":"Trailer Driver",
-    "K9":"K9 Handler",
-    "M":"Motorcycle Driver",
-    "R":"Ropes Team Member",
-    "EMT":"Emergency Medical Tech.",
-    "H":"Mounted Team Member",
-    "HT":"Hasty Team Member",
-    "SC":"Snow Cat Driver",
-    "PM":"Paramedic",
-    "SM":"Snowmobile Driver",
-    "N":"Nordic Team Member",
-    "UTV1":"UTV Type 1 Driver",
-    "ATV1":"ATV Type 1 Driver",
-    "CI":"Crisis Team Member",
-    "MT":"Tracking Team Member",
-    "E":"Evidence Team Member",
-    "D":"Dive Team Member",
-    "RN":"Registered Nurse"}
-
-# for searches, the following certs will prompt the member as to whether
-#  they are ready to deploy as that resource type; include
-#  resource types that need special gear (dog, horse, atv, extra clothing)
-CERTS_NEED_PROMPT=["K9","M","H","SC","SM","N","ATV1","D"]
-
 class signinApp(App):
     def build(self):
         Logger.info("build starting...")
@@ -154,12 +124,8 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
+        self.possibleCerts=["K9A","K9T","M","S","K9","DR"]
         self.roster={}
-        self.eventType="Meeting"
-        self.eventName=""
-        self.eventLocation=""
-        self.eventStartDate=""
-        self.eventStartTime=""
         self.signInList=[]
 #         self.exportList=[]
 #         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
@@ -174,8 +140,7 @@ class signinApp(App):
 #             self.rosterDir="/storage/emulated/0/Download"
             self.downloadDir="/storage/emulated/0/Download"
             self.csvDir=os.path.dirname(os.path.abspath(__file__))
-#             self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
-            self.rosterDir=self.downloadDir # TO DO: implement a dir search tree
+            self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
         self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
@@ -225,7 +190,7 @@ class signinApp(App):
         return self.sm
 
     def q(self,query):
-#         Logger.info("** EXECUTING QUERY: "+str(query))
+        print("** EXECUTING QUERY: "+query)
         self.cur.execute(query)
         
     def initSql(self):
@@ -277,29 +242,14 @@ class signinApp(App):
         # 4. if more than one is not finalized, show a pick box to let user
         #      select which one to restore
         # 5. if everything within the last 24 hours is finalized, do not load anything
-        #   if a finalized version of a file exists, don't try to load any of its .bak<x>.csv files
-        Logger.info("entering recoverIfNeeded: start time="+str(self.startTime))
+        
+        Logger.info("entering recoverIfNeeded")
         csvList=self.scanForCSV()
         Logger.info("Valid CSV files:"+str(csvList))
-        finalized=[x[0] for x in csvList if x[4]]
-        Logger.info("Finalized CSV files:"+str(finalized))
 #         each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
-        csvCandidates1=[x for x in csvList if self.startTime-x[1]<86400 and not x[4]]
-        csvCandidates1.sort(key=sortSecond)
-        csvCandidates1.reverse() # most recent first, i.e. descending order
-        # remove .bak files that have a finalized non-.bak version - could probably be refactored
-        csvCandidates=[]
-        for x in csvCandidates1:
-            excludeFlag=False
-            if re.match(".*\.bak[0-9]+\.csv$",x[0]): # it's a backup file
-                nonBakName=re.sub("\.bak[0-9]+","",x[0])
-                Logger.info("  found a backup file "+x[0]+" - looking for finalized original file "+nonBakName)
-                if nonBakName in finalized:
-                    Logger.info("    found finalized original file "+nonBakName+"; excluding "+x[0]+" from candidates list")
-                    excludeFlag=True
-            if not excludeFlag:
-                csvCandidates.append(x)
-
+        csvCandidates=[x for x in csvList if self.startTime-x[1]<86400 and not x[4]]
+        csvCandidates.sort(key=sortSecond)
+        csvCandidates.reverse() # most recent first, i.e. descending order
         Logger.info("Candidates for recover:"+str(csvCandidates))
         if len(csvCandidates)>>0:
             Logger.info("Reading "+csvCandidates[0][0])
@@ -387,17 +337,14 @@ class signinApp(App):
 #                 self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
                 csvReader=csv.reader(rosterFile)
                 Logger.info("opened...")
-                leoPattern=re.compile("[1234][TSEPDVN][0-9]+")
                 for row in csvReader:
                     # critera for adding a row to the roster:
-                    #  row[7] (DOE = Date Of Entry) must be non-blank (volunteers)
-                    #   OR
-                    #  row[0] must match [1234][TSEPDVN][0-9]+ (law enforcement)
-                    #  if row[0] (ID) is blank, assign a unique ID here 
+                    #  row[7] (DOE = Date Of Entry) must be non-blank
+                    #  so if row[0] (ID) is blank, assign a unique ID here 
                     #   to allow the rest of this app to work.  Start with 'X1'.
 #                     Logger.info("row:"+str(row[0])+":"+row[1])
                     # if the first token has any digits, add it to the roster
-                    if row[7] not in ("","DOE") or leoPattern.search(row[0]): # skip blanks and the header
+                    if row[7] not in ("","DOE"): # skip blanks and the header
 #                     if any(i.isdigit() for i in row[0]):
                         if row[0]=="":
                             row[0]="X"+str(self.nextXID)
@@ -427,9 +374,9 @@ class signinApp(App):
         alphaGroupList=[0]*26
         for letter in letters:
             n=ord(letter)-97
-            Logger.info("letter:"+letter+" n:"+str(n)+" list:"+str(len(alphaDict.get(letter,[])))+":"+str(alphaDict.get(letter,[])))
+            print("letter:"+letter+" n:"+str(n)+" list:"+str(len(alphaDict.get(letter,[])))+":"+str(alphaDict.get(letter,[])))
             alphaGroupList[n]=len(alphaDict.get(letter,[]))
-        Logger.info("alphaGroupList:"+str(alphaGroupList))
+        print("alphaGroupList:"+str(alphaGroupList))
         # 3. group the letters into numOfGroups groups, such that all the group
         #     lengths are as close together as possible
         #     (target group length = total roster length / numOfGroups)
@@ -474,47 +421,38 @@ class signinApp(App):
             return "NO"
     
     def getCerts(self,id):
-        # return a list of two lists: [[not-prompted],[prompted]] cert types
-        not_prompted=[]
-        prompted=[]
+        certs=[]
         if self.roster[id]:
             # parse the certifications field, using either space or comma as delimiter,
             #  removing blank strings due to back-to-back delimiters due to loose syntax
-            allCerts=[x for x in self.roster[id][1].replace(' ',',').split(',') if x]
-            Logger.info("roster certs for "+id+":"+str(allCerts)+"  (raw="+str(self.roster[id][1])+")")
-            prompted=[x for x in allCerts if x in CERTS_NEED_PROMPT]
-            not_prompted=[x for x in allCerts if x not in prompted]
-#             for possibleCert in CERTS_NEED_PROMPT:
-#                 if possibleCert in idCerts:
-#                     certs.append(CERT_DICT[possibleCert])
-#                     certs.append(possibleCert)
-        certs=[not_prompted,prompted]
+            idCerts=[x for x in self.roster[id][1].replace(' ',',').split(',') if x]
+            Logger.info("roster certs for "+id+":"+str(idCerts)+"  (raw="+str(self.roster[id][1])+")")
+            for possibleCert in self.possibleCerts:
+                if possibleCert in idCerts:
+                    certs.append(possibleCert)
         Logger.info("Certifications for "+id+":"+str(certs))
         return certs
 
-    def downloadFile(self,filename,mimetype,doToast=True):
+    def downloadFile(self,filename,mimetype):
         path=self.downloadDir+"/"+os.path.basename(filename)
-        Logger.info("Downloading i.e. copying from "+filename+" to "+path+" doToast:"+str(doToast))
+        Logger.info("Downloading i.e. copying from "+filename+" to "+path)
         try:
             shutil.copy(filename,path)
         except PermissionError as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            if doToast:
-                toast("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
-                toast("File not written: "+str(ex))
+            toast("File not written: Permission denied\n\nPlease add Storage permission for this app using your device's Settings menu, then try again.\n\nYou should not need to restart the app.")
+            toast("File not written: "+str(ex))
         except Exception as ex:
             Logger.warning("Could not write file "+path+":")
             Logger.warning(ex)
-            if doToast:
-                toast("File not written: "+str(ex))
+            toast("File not written: "+str(ex))
         else:
             Logger.info("Download successful")
             if platform in ('android'):
                 DownloadService=mActivity.getSystemService(Context.DOWNLOAD_SERVICE)
                 DownloadService.addCompletedDownload(path,path,True,mimetype,path,os.stat(path).st_size,True)    
-                if doToast:
-                    toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
+                toast("File created successfully:\n\n"+path+"\n\nCheck your 'download' notifications for single-tap access.")
  
     def scanForCSV(self,dirname=None):
         # return a list of lists: each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
@@ -590,25 +528,13 @@ class signinApp(App):
                     row[9]=float(row[9]) # use the number of sec for total time
                     self.signInList.append(row)
                 elif row[0].startswith("## Event Date and Start Time:"):
-                    startDateTime=row[0].split(': ')[1]
-                    startDateTimeParse=startDateTime.split(" ")
-                    self.details.eventStartDate=" ".join(startDateTimeParse[0:-1])
-                    Logger.info("recovered event start date:"+str(self.details.eventStartDate))
-                    self.details.eventStartTime=startDateTimeParse[-1]
-                    Logger.info("recovered event start time:"+str(self.details.eventStartTime))
+                    pass
                 elif row[0].startswith("## Event Name:"):
-                    self.details.eventName=row[0].split(': ')[1]
-                    Logger.info("recovered event name:"+str(self.details.eventName))
+                    self.eventName=row[0].split(':')[1]
                 elif row[0].startswith("## Event Type:"):
-#                     Logger.info("  event type before read: "+str(self.eventType))
-                    self.details.eventType=row[0].split(': ')[1]
-#                     Logger.info("  event type after read: "+str(self.eventType))
-#                     cmd="self.details.ids."+self.eventType.lower()+"CheckBox.active=True"
-#                     Logger.info("cmd:"+str(cmd))
-#                     eval(cmd)
+                    self.eventType=row[0].split(':')[1]
                 elif row[0].startswith("## Event Location:"):
-                    self.details.eventLocation=row[0].split(': ')[1]
-                    Logger.info("recovered event location:"+str(self.details.eventLocation))
+                    self.eventLocation=row[0].split(':')[1]
 #             self.exportList=copy.deepcopy(self.signInList) # otherwise this only happens on sign in/out
             Logger.info(str(len(self.signInList))+" entries read")
             Logger.info(str(self.signInList))
@@ -624,7 +550,7 @@ class signinApp(App):
         Logger.info("updated CSV filename:"+f)
         self.csvFileName=os.path.join(self.csvDir,f)
         
-    def writeCSV(self,rotate=True,download=False,doToastOverride=False):
+    def writeCSV(self,rotate=True,download=False):
         self.updateCSVFileName()
         # rotate first, since it moves the base file to .bak1
         Logger.info("writeCSV called")
@@ -639,7 +565,7 @@ class signinApp(App):
             csvWriter.writerow(["## Event Type: "+self.details.eventType])
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
-            csvWriter.writerow(["ID","Name","Agency","Resource","In","Out","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"])
+            csvWriter.writerow(["ID","Name","Resource","In","Out","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"])
             for entry in self.signInList:
 #                 # copy in, out, and total seconds to end of list
 #                 entry.append(entry[3])
@@ -654,12 +580,8 @@ class signinApp(App):
 #                 #  same character used as the delimiter appears in the string
                 csvWriter.writerow(entry)
             csvWriter.writerow(["## end of list; FINALIZED: "+self.getFinalizedText()])
-        doToast=True
-        if self.details.ids.autoExport.active:
-            download=True
-            doToast=doToastOverride # toast if export button was hit, even if auto-export is on
         if download and os.path.isfile(self.csvFileName):
-            self.downloadFile(self.csvFileName,"text/csv",doToast)
+            self.downloadFile(self.csvFileName,"text/csv")
         self.q("DELETE FROM SignIn") # easiest code is to delete all rows and start from scratch
         for entry in self.signInList:
             self.q("INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry))
@@ -684,7 +606,7 @@ class signinApp(App):
         #  recent backup woult be the same as the most recent file except with
         #  finalize=NO meaning it would be a candidate for auto-recover, which
         #  we do not want.
-        self.writeCSV(download=True,rotate=False,doToastOverride=True)
+        self.writeCSV(download=True,rotate=False)
         self.writePDF(download=True)
         
 #     def writePDFHeaderFooter(self,canvas,doc):
@@ -910,16 +832,13 @@ class signinApp(App):
         self.signin.on_enter=self.signInNameTextUpdate
         self.signin.ids.idLabel.text=self.getIdText(id)
         self.signin.fromLookup=fromLookup
-        certsNeedPrompt=self.getCerts(id)[1]
+        certs=self.getCerts(id)
         self.signin.ids.certBox.clear_widgets()
-        self.signin.ids.certHeader.opacity=0
-        if self.details.eventType=="Search" and certsNeedPrompt:
-            self.signin.ids.certHeader.opacity=1
-            for cert in certsNeedPrompt:
+        if self.details.eventType=="Search":
+            for cert in certs:
                 Logger.info("adding certification question for "+cert)
                 certLayout=BoxLayout(orientation='horizontal',size_hint=(1,0.1))
-#                 certLabel=Label(text=cert+'?',font_size=self.signin.ids.certHeader.font_size)
-                certLabel=Label(text=CERT_DICT[cert]+'?')
+                certLabel=Label(text='Are you ready to deploy as '+cert+'?')
                 certSwitch=YesNoSwitch()
                 certSwitch.cert=cert # pass the cert name as a property of the switch
         #                         certSwitch.bind(active=self.certSwitchCB)
@@ -1062,20 +981,20 @@ class signinApp(App):
 # #                         buttonsLayout.add_widget(goButton)
 # #                         self.layout.add_widget(buttonsLayout)
 #                     self.sm.current='signin'
-                elif entry[8]==0: # signed in but not signed out
+                elif entry[7]==0: # signed in but not signed out
                     self.setTextToFit(self.signout.ids.nameLabel,self.getName(id))
                     # fit the text again after the transition is done, since the widget
                     #  size (and therefore the text height) is wacky until the screen has
                     #  been displayed for the first time
                     self.signout.on_enter=self.signOutNameTextUpdate
                     self.signout.ids.idLabel.text=self.getIdText(id)
-                    self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[4])
+                    self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[3])
                     self.signout.fromLookup=fromLookup
                     self.sm.current='signout'
                 else: # already signed out
                     text=""
                     for k in ii: # build the full string of all previous sign-in / sign-out pairs
-                        text=text+"In: "+self.timeStr(self.signInList[k][5])+"   Out: "+self.timeStr(self.signInList[k][6])+"   Total: "+self.timeStr(self.signInList[k][7])+"\n"
+                        text=text+"In: "+self.timeStr(self.signInList[k][4])+"   Out: "+self.timeStr(self.signInList[k][5])+"   Total: "+self.timeStr(self.signInList[k][6])+"\n"
 #                     self.alreadysignedout.ids.nameLabel.text=self.getName(id)
                     self.setTextToFit(self.alreadysignedout.ids.nameLabel,self.getName(id))
                     # fit the text again after the transition is done, since the widget
@@ -1107,9 +1026,7 @@ class signinApp(App):
                 #  since objects are always inserted to the front of the children list,
                 #  the actual switch will be .children[0] as long as it was the
                 #  last widget inserted to its certLayout
-                certsNoPrompt=self.getCerts(id)[0]
-                certsPromptedYes=[certLayout.children[0].cert for certLayout in self.signin.ids.certBox.children if certLayout.children[0].active] 
-                certs=certsPromptedYes+certsNoPrompt
+                certs=[certLayout.children[0].cert for certLayout in self.signin.ids.certBox.children if certLayout.children[0].active] 
                 s=id+" "+name+" signed in"
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
@@ -1139,16 +1056,13 @@ class signinApp(App):
 #                 self.writeCSV()
 #                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
-                #temporary hardcode 8-16-19
-                status="SignOut"
-                inTime=entry[7]
+                inTime=entry[6]
                 outTime=time.time()
                 totalTime=outTime-inTime
-                entry[5]=self.timeStr(outTime)
-                entry[6]=self.timeStr(totalTime)
-                entry[8]=outTime
-                entry[9]=totalTime
-                entry[11]="SignOut"
+                entry[4]=self.timeStr(outTime)
+                entry[5]=self.timeStr(totalTime)
+                entry[7]=outTime
+                entry[8]=totalTime
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -1241,7 +1155,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
         ''' Respond to the selection of items in the view. '''
         self.selected = is_selected
         if is_selected:
-            Logger.info("selection changed to {0}".format(rv.data[index]))
+            print("selection changed to {0}".format(rv.data[index]))
             [name,id]=rv.data[index]['text'].split(" : ")
             theApp.keyDown(id[-1]) # mimic the final character of the ID, to trigger the lookup
             theApp.typed=id
@@ -1301,8 +1215,6 @@ class LookupScreen(Screen):
 class DetailsScreen(Screen):
     eventType=StringProperty("")
     eventName=StringProperty("")
-    eventStartDate=StringProperty(today_date())
-    eventStartTime=StringProperty(datetime.datetime.now().strftime("%H:%M"))
     eventLocation=StringProperty("")
     rosterFileName=StringProperty("")
 

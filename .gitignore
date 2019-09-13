@@ -1,6 +1,10 @@
 bin
 old
+libs
 __pycache__
 .project
 .pydevproject
 .buildozer
+*.txt
+*.log
+*.pyc
