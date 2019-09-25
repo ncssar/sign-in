@@ -45,6 +45,8 @@ import shutil
 import sqlite3
 import re
 import datetime
+import requests
+import json
 
 # from reportlab.lib import colors,utils
 # from reportlab.lib.pagesizes import letter,landscape
@@ -154,6 +156,10 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
+#         self.host="http://127.0.0.1:5000"
+        self.host="http://caver456.pythonanywhere.com"
+        self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
+        self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
         self.roster={}
         self.eventType="Meeting"
         self.eventName=""
@@ -212,7 +218,7 @@ class signinApp(App):
         self.typed=''
         self.finalized=False
         self.details.rosterFileName=self.rosterFileName
-        self.startTime=time.time()
+        self.startTime=round(time.time(),2) # round to hundredth of a second to aid database comparison 
         self.readRoster()
 #         self.setupAlphaGrouping()
         self.clocktext=self.keypad.ids.clocktext
@@ -222,6 +228,7 @@ class signinApp(App):
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
         
         self.initSql()
+        self.sync()
         return self.sm
 
     def q(self,query):
@@ -235,19 +242,31 @@ class signinApp(App):
 #             self.q("CREATE TABLE IF NOT EXISTS About("
 #                 "EventName TEXT,"
 #                 "")
-            self.q("CREATE TABLE IF NOT EXISTS SignIn("
-                "ID TEXT,"
-                "Name TEXT,"
-                "Agency TEXT,"
-                "Resources TEXT,"
-                "TimeIn TEXT,"
-                "TimeOut TEXT,"
-                "TotalTime TEXT,"
-                "EpochIn REAL,"
-                "EpochOut REAL,"
-                "TotalSec REAL,"
-                "CellNum TEXT,"
-                "Status TEXT)")
+            # build the initialization query
+            query="CREATE TABLE IF NOT EXISTS SignIn("
+            colTextList=[]
+            for c in self.columns:
+                type='TEXT'
+                if c in self.realCols:
+                    type='REAL'
+                colTextList.append(c+" "+type)
+            query+=','.join(colTextList)
+            query+=")"
+            Logger.info("init query:"+query)
+            self.q(query)
+#             self.q("CREATE TABLE IF NOT EXISTS SignIn("
+#                 "ID TEXT,"
+#                 "Name TEXT,"
+#                 "Agency TEXT,"
+#                 "Resources TEXT,"
+#                 "TimeIn TEXT,"
+#                 "TimeOut TEXT,"
+#                 "TotalTime TEXT,"
+#                 "EpochIn REAL,"
+#                 "EpochOut REAL,"
+#                 "TotalSec REAL,"
+#                 "CellNum TEXT,"
+#                 "Status TEXT)")
             
     def on_keyboard(self,window,key,*args):
 #         Logger.info("key pressed:"+str(key))
@@ -642,7 +661,7 @@ class signinApp(App):
             csvWriter.writerow(["## Event Type: "+self.details.eventType])
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
-            csvWriter.writerow(["ID","Name","Agency","Resource","In","Out","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"])
+            csvWriter.writerow(self.columns)
             for entry in self.signInList:
 #                 # copy in, out, and total seconds to end of list
 #                 entry.append(entry[3])
@@ -806,8 +825,8 @@ class signinApp(App):
 #         doc.build(elements,onFirstPage=self.writePDFHeaderFooter,onLaterPages=self.writePDFHeaderFooter)         
 #         Logger.info("print job completed")
 #         
-    def sync(self):
-        pass
+#     def sync(self):
+#         pass
     
     def timeStr(self,sec):
         Logger.info("calling timeStr:"+str(sec))
@@ -955,7 +974,32 @@ class signinApp(App):
 #             Logger.info("  font size:"+str(widget.font_size))
 #             Logger.info("  widget width:"+str(widthWidget.width))
 #             Logger.info("  texture width:"+str(widget.texture_size[0]))
-             
+    
+    def sendAction(self,entry):
+        Logger.info("sendAction called")
+        d=dict(zip(self.columns,entry))
+        j=json.dumps(d)
+        Logger.info("dict:"+str(d))
+        Logger.info("json:"+str(j))
+#         requests.post(url="http://127.0.0.1:5000/api/v1/events/current/add",json=j)
+        requests.put(url=self.host+"/api/v1/events/current",json=j)
+    
+    # this function name may change - right now it is intended to grab the entire table
+    #  from the server using http api
+    def sync(self):
+        Logger.info("sync called")
+        r=requests.get(url=self.host+"/api/v1/events/current")
+        Logger.info("response json:"+str(r.json()))
+        # the response json entries are unordered; need to put them in the right
+        #  order to store in the internal list of lists
+        j=r.json() # r.json() returns a list of dictionaries
+        self.signInList=[]
+        for d in j:
+            Logger.info("  entry dict:"+str(d))
+            entry=[d[k] for k in self.columns]
+            Logger.info("  entry list:"+str(entry))
+            self.signInList.append(entry)
+        
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
         if len(text)<3: # number or code; it must be from the keypad
@@ -1101,11 +1145,12 @@ class signinApp(App):
                 name=self.getName(id)
                 # temporary hardcodes 8-16-19
                 agency="NCSSAR"
-                cellNum=self.getCell(id)
-                status="SignIn"
+#                 cellNum=self.getCell(id)
+                cellNum="123-456-7890" # use fake numbers for security while db is public on the web
+                status="SignedIn"
                 idText=self.getIdText(id)
 #                 self.sm.current='signintype'
-                t=time.time()
+                t=round(time.time(),2) # round to hundredth of a second to aid database comparison
                 # get the list of on/enabled ready-to-deploy-as switches
                 #  since objects are always inserted to the front of the children list,
                 #  the actual switch will be .children[0] as long as it was the
@@ -1117,7 +1162,9 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                self.signInList.append([id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status])
+                entry=[id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status]
+                self.signInList.append(entry)
+                self.sendAction(entry)
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -1143,15 +1190,16 @@ class signinApp(App):
 #                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
                 #temporary hardcode 8-16-19
-                status="SignOut"
+                status="SignedOut"
                 inTime=entry[7]
-                outTime=time.time()
-                totalTime=outTime-inTime
+                outTime=round(time.time(),2) # round to hundredth of a second to aid database comparison
+                totalTime=round(outTime-inTime)
                 entry[5]=self.timeStr(outTime)
                 entry[6]=self.timeStr(totalTime)
                 entry[8]=outTime
                 entry[9]=totalTime
-                entry[11]="SignOut"
+                entry[11]=status
+                self.sendAction(entry)
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
