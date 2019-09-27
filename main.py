@@ -866,7 +866,7 @@ class signinApp(App):
     
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
-        Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
+#         Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
         return len([x for x in self.signInList if x[5]==0 or x[5]=='--'])
     
     def getTotalAttendingCount(self,*Args):
@@ -981,8 +981,25 @@ class signinApp(App):
         j=json.dumps(d)
         Logger.info("dict:"+str(d))
         Logger.info("json:"+str(j))
-#         requests.post(url="http://127.0.0.1:5000/api/v1/events/current/add",json=j)
-        requests.put(url=self.host+"/api/v1/events/current",json=j)
+        r=requests.put(url=self.host+"/api/v1/events/current",json=j)
+        try:
+            rj=r.json()
+        except:
+            Logger.info("reponse error: PUT response has no json:\n"+str(r))
+            return -1
+        Logger.info("response json:"+str(rj))
+        if "validate" not in rj:
+            Logger.info("response error: PUT response json has no 'validate' entry:\n"+str(rj))
+            return -1
+        v=rj["validate"]
+        if len(v) != 1:
+            Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
+            return -1
+        if d != v[0]:
+            Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
+            return -1
+        Logger.info("PUT response has been validated.")
+        return 0
     
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
