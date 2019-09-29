@@ -1010,19 +1010,27 @@ class signinApp(App):
     #  from the server using http api
     def sync(self,clobber=False):
         Logger.info("sync called")
-        r=requests.get(url=self.host+"/api/v1/events/current")
-        Logger.info("response json:"+str(r.json()))
+        try:
+            r=requests.get(url=self.host+"/api/v1/events/current")
+        except Exception as e:
+            Logger.info("error during GET request:\n"+str(e))
+            return -1
         # the response json entries are unordered; need to put them in the right
         #  order to store in the internal list of lists
-        j=r.json() # r.json() returns a list of dictionaries
-        if clobber:
-            self.signInList=[]
-        for d in j:
-            Logger.info("  entry dict:"+str(d))
-            entry=[d[k] for k in self.columns]
-            Logger.info("  entry list:"+str(entry))
-            if entry not in self.signInList: # do not add duplicates
-                self.signInList.append(entry)
+        try:
+            rj=r.json() # r.json() returns a list of dictionaries
+        except:
+            Logger.info("reponse error: GET response has no json:\n"+str(r))
+            return -1
+        else:
+            if clobber:
+                self.signInList=[]
+            for d in rj:
+                Logger.info("  entry dict:"+str(d))
+                entry=[d[k] for k in self.columns]
+                Logger.info("  entry list:"+str(entry))
+                if entry not in self.signInList: # do not add duplicates
+                    self.signInList.append(entry)
         self.updateHeaderCount()
         
     def keyDown(self,text,fromLookup=False):
