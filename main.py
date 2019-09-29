@@ -156,8 +156,8 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
-#         self.host="http://127.0.0.1:5000"
-        self.host="http://caver456.pythonanywhere.com"
+        self.host="http://127.0.0.1:5000"
+#         self.host="http://caver456.pythonanywhere.com"
         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
         self.roster={}
@@ -850,8 +850,7 @@ class signinApp(App):
         return time.strftime("%H:%M",time.localtime(sec))
     
     def switchToBlankKeypad(self,*args):
-#         self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
-        self.keypad.ids.headerLabel.text=" Total: "+str(self.getTotalAttendingCount())+"   Here: "+str(self.getCurrentlySignedInCount())
+        self.updateHeaderCount()
         self.typed=''
         self.hide()
         self.sm.current='keypad'
@@ -863,7 +862,9 @@ class signinApp(App):
         else:
             self.keypad.ids.topLabel.text=""
 
-    
+    def updateHeaderCount(self):
+        self.keypad.ids.headerLabel.text=" Total: "+str(self.getTotalAttendingCount())+"   Here: "+str(self.getCurrentlySignedInCount())
+            
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
 #         Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
@@ -981,7 +982,11 @@ class signinApp(App):
         j=json.dumps(d)
         Logger.info("dict:"+str(d))
         Logger.info("json:"+str(j))
-        r=requests.put(url=self.host+"/api/v1/events/current",json=j)
+        try:
+            r=requests.put(url=self.host+"/api/v1/events/current",json=j)
+        except Exception as e:
+            Logger.info("error during PUT request:\n"+str(e))
+            return -1
         try:
             rj=r.json()
         except:
@@ -1003,19 +1008,22 @@ class signinApp(App):
     
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
-    def sync(self):
+    def sync(self,clobber=False):
         Logger.info("sync called")
         r=requests.get(url=self.host+"/api/v1/events/current")
         Logger.info("response json:"+str(r.json()))
         # the response json entries are unordered; need to put them in the right
         #  order to store in the internal list of lists
         j=r.json() # r.json() returns a list of dictionaries
-        self.signInList=[]
+        if clobber:
+            self.signInList=[]
         for d in j:
             Logger.info("  entry dict:"+str(d))
             entry=[d[k] for k in self.columns]
             Logger.info("  entry list:"+str(entry))
-            self.signInList.append(entry)
+            if entry not in self.signInList: # do not add duplicates
+                self.signInList.append(entry)
+        self.updateHeaderCount()
         
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
