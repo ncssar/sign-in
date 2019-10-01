@@ -77,6 +77,7 @@ from kivy.properties import BooleanProperty, ListProperty, StringProperty, Objec
 from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
+from kivy.network.urlrequest import UrlRequest
 
 # # from kivy.garden import datetimepicker
 # # DatePicker from https://github.com/Skucul/datepicker
@@ -156,8 +157,8 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
-        self.host="http://127.0.0.1:5000"
-#         self.host="http://caver456.pythonanywhere.com"
+#         self.host="http://127.0.0.1:5000"
+        self.host="http://caver456.pythonanywhere.com"
         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
         self.roster={}
@@ -975,28 +976,61 @@ class signinApp(App):
 #             Logger.info("  font size:"+str(widget.font_size))
 #             Logger.info("  widget width:"+str(widthWidget.width))
 #             Logger.info("  texture width:"+str(widget.texture_size[0]))
-    
+
     def sendAction(self,entry):
         Logger.info("sendAction called")
         d=dict(zip(self.columns,entry))
         j=json.dumps(d)
         Logger.info("dict:"+str(d))
         Logger.info("json:"+str(j))
-        try:
-            r=requests.put(url=self.host+"/api/v1/events/current",json=j)
-        except Exception as e:
-            Logger.info("error during PUT request:\n"+str(e))
-            return -1
-        try:
-            rj=r.json()
-        except:
-            Logger.info("reponse error: PUT response has no json:\n"+str(r))
-            return -1
-        Logger.info("response json:"+str(rj))
-        if "validate" not in rj:
-            Logger.info("response error: PUT response json has no 'validate' entry:\n"+str(rj))
-            return -1
-        v=rj["validate"]
+        # UrlRequest sends body as plain text by default; need to send json header
+        #  but the api still shows that it came across as an actual dictionary
+        #  rather than plain text; added a handler for this in the api
+        headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+        request=UrlRequest(self.host+"/api/v1/events/current",
+                on_success=self.on_sendAction_success,
+                on_failure=self.on_sendAction_failure,
+                on_error=self.on_sendAction_error,
+                req_body=j,
+                req_headers=headers,
+                method="PUT",
+                debug=True)
+        Logger.info("asynchronous request sent:"+str(request))
+
+#     def sendAction(self,entry):
+#         Logger.info("sendAction called")
+#         d=dict(zip(self.columns,entry))
+#         j=json.dumps(d)
+#         Logger.info("dict:"+str(d))
+#         Logger.info("json:"+str(j))
+#         try:
+#             r=requests.put(url=self.host+"/api/v1/events/current",json=j)
+#         except Exception as e:
+#             Logger.info("error during PUT request:\n"+str(e))
+#             return -1
+#         try:
+#             rj=r.json()
+#         except:
+#             Logger.info("reponse error: PUT response has no json:\n"+str(r))
+#             return -1
+#         Logger.info("response json:"+str(rj))
+#         if "validate" not in rj:
+#             Logger.info("response error: PUT response json has no 'validate' entry:\n"+str(rj))
+#             return -1
+#         v=rj["validate"]
+#         if len(v) != 1:
+#             Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
+#             return -1
+#         if d != v[0]:
+#             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
+#             return -1
+#         Logger.info("PUT response has been validated.")
+#         return 0
+#     
+    def on_sendAction_success(self,request,result):
+        Logger.info("on_sendAction_success called:")
+        d=eval(request.req_body) # request body is a string; we want dict for comparison below
+        v=result["validate"]
         if len(v) != 1:
             Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
             return -1
@@ -1004,35 +1038,70 @@ class signinApp(App):
             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
             return -1
         Logger.info("PUT response has been validated.")
-        return 0
-    
+        self.sync()
+        
+    def on_sendAction_failure(self,request,result):
+        Logger.info("on_sendAction_failure called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        
+    def on_sendAction_error(self,request,result):
+        Logger.info("on_sendAction_error called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
     def sync(self,clobber=False):
         Logger.info("sync called")
-        try:
-            r=requests.get(url=self.host+"/api/v1/events/current")
-        except Exception as e:
-            Logger.info("error during GET request:\n"+str(e))
-            return -1
-        # the response json entries are unordered; need to put them in the right
-        #  order to store in the internal list of lists
-        try:
-            rj=r.json() # r.json() returns a list of dictionaries
-        except:
-            Logger.info("reponse error: GET response has no json:\n"+str(r))
-            return -1
-        else:
-            if clobber:
-                self.signInList=[]
-            for d in rj:
-                Logger.info("  entry dict:"+str(d))
-                entry=[d[k] for k in self.columns]
-                Logger.info("  entry list:"+str(entry))
-                if entry not in self.signInList: # do not add duplicates
-                    self.signInList.append(entry)
+        request=UrlRequest(self.host+"/api/v1/events/current",
+                on_success=self.on_sync_success)
+#                 self.on_sync_success,
+#                 self.on_sync_redirect,
+#                 self.on_sync_failure,
+#                 self.on_sync_error)
+        Logger.info("asynchronous request sent:"+str(request))
+    
+    def on_sync_success(self,request,result):
+        Logger.info("on_sync_success called")
+        Logger.info(str(result))
+        for d in result:
+            Logger.info("  entry dict:"+str(d))
+            entry=[d[k] for k in self.columns]
+            Logger.info("  entry list:"+str(entry))
+            if entry not in self.signInList: # do not add duplicates
+                self.signInList.append(entry)
         self.updateHeaderCount()
-        
+    
+#     def sync(self,clobber=False):
+#         Logger.info("sync called")
+#         try:
+#             r=requests.get(url=self.host+"/api/v1/events/current")
+#         except Exception as e:
+#             Logger.info("error during GET request:\n"+str(e))
+#             return -1
+#         # the response json entries are unordered; need to put them in the right
+#         #  order to store in the internal list of lists
+#         try:
+#             rj=r.json() # r.json() returns a list of dictionaries
+#         except:
+#             Logger.info("reponse error: GET response has no json:\n"+str(r))
+#             return -1
+#         else:
+#             if clobber:
+#                 self.signInList=[]
+#             for d in rj:
+#                 Logger.info("  entry dict:"+str(d))
+#                 entry=[d[k] for k in self.columns]
+#                 Logger.info("  entry list:"+str(entry))
+#                 if entry not in self.signInList: # do not add duplicates
+#                     self.signInList.append(entry)
+#         self.updateHeaderCount()
+    
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
         if len(text)<3: # number or code; it must be from the keypad
@@ -1048,7 +1117,9 @@ class signinApp(App):
             elif text=='lu':
                 Logger.info("lookup table requested")
                 self.showLookup()
-            else:    
+            else:
+                if self.typed=="": # this is the first char; do a fresh sync
+                    self.sync()
                 self.typed+=text
                 self.show()
             Logger.info("  typed="+self.typed)
