@@ -45,7 +45,7 @@ import shutil
 import sqlite3
 import re
 import datetime
-import requests
+# import requests
 import json
 
 # from reportlab.lib import colors,utils
@@ -186,6 +186,11 @@ class signinApp(App):
         self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
+        self.syncCloudIconFileName="images/cloud.png"
+        self.syncCloudUploadStartIconFileName="images/cloud_upload.png"
+        self.syncCloudUploadSuccessIconFileName="images/cloud_upload.png"
+        self.syncCloudDownloadStartIconFileName="images/cloud_download.png"
+        self.syncCloudDownloadSuccessIconFileName="images/cloud_download.png"
         self.agencyNameForPrint="NEVADA COUNTY SHERIFF'S SEARCH AND RESCUE"
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
@@ -829,6 +834,25 @@ class signinApp(App):
 #     def sync(self):
 #         pass
     
+    def newEventPrompt(self):
+        self.textpopup(title='New Event', text='This will delete all entries; are you sure?',on_release=self.newEvent)
+    
+    def newEvent(self,*args,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
+        Logger.info("newEvent called: eventName="+str(eventName))
+        if not eventStartDate:
+            eventStartDate=today_date()
+        if not eventStartTime:
+            eventStartTime=datetime.datetime.now().strftime("%H:%M")
+        if not eventName:
+            eventName=""
+        if not eventLocation:
+            eventLocation=""
+        self.details.eventName=eventName
+        self.details.eventLocation=eventLocation
+        self.details.eventStartDate=eventStartDate
+        self.details.eventStartTime=eventStartTime
+        self.signInList=[]
+        
     def timeStr(self,sec):
         Logger.info("calling timeStr:"+str(sec))
         if isinstance(sec,str): # return strings as-is
@@ -857,7 +881,7 @@ class signinApp(App):
         self.sm.current='keypad'
         if self.adminMode:
             self.exitAdminMode()
-        if self.getCurrentlySignedInCount()<1:
+        if self.getTotalAttendingCount()>0 and self.getCurrentlySignedInCount()<1:
             self.keypad.ids.topLabel.text="READY TO FINALIZE"
             self.keypad.ids.topLabel.background_color=(0,0,0.5,1)
         else:
@@ -977,6 +1001,16 @@ class signinApp(App):
 #             Logger.info("  widget width:"+str(widthWidget.width))
 #             Logger.info("  texture width:"+str(widget.texture_size[0]))
 
+#     def updateSyncLabel(self,text):
+#         t=self.keypad.ids.syncLabel.text
+#         self.keypad.ids.syncLabel.text=t+text
+#         self.keypad.ids.syncLabel.background_color=1,0,0,1
+#         self.thankyou.ids.syncLabel.text=t+text
+#         
+#     def clearSyncLabel(self,*args):
+#         self.keypad.ids.syncLabel.text=''
+#         self.thankyou.ids.syncLabel.text=''
+        
     def sendAction(self,entry):
         Logger.info("sendAction called")
         d=dict(zip(self.columns,entry))
@@ -996,6 +1030,9 @@ class signinApp(App):
                 method="PUT",
                 debug=True)
         Logger.info("asynchronous request sent:"+str(request))
+#         self.updateSyncLabel("--> C :")
+        self.keypad.ids.syncButtonImage.source=self.syncCloudUploadStartIconFileName
+        self.thankyou.ids.syncButtonImage.source=self.syncCloudUploadStartIconFileName
 
 #     def sendAction(self,entry):
 #         Logger.info("sendAction called")
@@ -1038,6 +1075,9 @@ class signinApp(App):
             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
             return -1
         Logger.info("PUT response has been validated.")
+#         self.updateSyncLabel(" OK")
+        self.keypad.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.thankyou.ids.syncButtonImage.source=self.syncCloudIconFileName
         self.sync()
         
     def on_sendAction_failure(self,request,result):
@@ -1046,6 +1086,10 @@ class signinApp(App):
         Logger.info("    request body="+str(request.req_body))
         Logger.info("    request headers="+str(request.req_headers))
         Logger.info("  result="+str(result))
+        self.keypad.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.thankyou.ids.syncButtonImage.source=self.syncCloudIconFileName
+#         self.updateSyncLabel(" X")
+#         Clock.schedule_once(self.clearSyncLabel,3)
         
     def on_sendAction_error(self,request,result):
         Logger.info("on_sendAction_error called:")
@@ -1053,6 +1097,10 @@ class signinApp(App):
         Logger.info("    request body="+str(request.req_body))
         Logger.info("    request headers="+str(request.req_headers))
         Logger.info("  result="+str(result))
+        self.keypad.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.thankyou.ids.syncButtonImage.source=self.syncCloudIconFileName
+#         self.updateSyncLabel(" X")
+#         Clock.schedule_once(self.clearSyncLabel,3)
 
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
@@ -1065,6 +1113,9 @@ class signinApp(App):
 #                 self.on_sync_failure,
 #                 self.on_sync_error)
         Logger.info("asynchronous request sent:"+str(request))
+        self.keypad.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
+        self.thankyou.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
+#         self.updateSyncLabel("<-- C :")
     
     def on_sync_success(self,request,result):
         Logger.info("on_sync_success called")
@@ -1075,7 +1126,11 @@ class signinApp(App):
             Logger.info("  entry list:"+str(entry))
             if entry not in self.signInList: # do not add duplicates
                 self.signInList.append(entry)
+        self.keypad.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.thankyou.ids.syncButtonImage.source=self.syncCloudIconFileName
         self.updateHeaderCount()
+#         self.updateSyncLabel(" OK")
+#         Clock.schedule_once(self.clearSyncLabel,2)
     
 #     def sync(self,clobber=False):
 #         Logger.info("sync called")
@@ -1329,7 +1384,7 @@ class signinApp(App):
         else:
             return True
  
-    def textpopup(self, title='', text=''):
+    def textpopup(self, title='', text='', on_release=None):
         """Open the pop-up with the name.
  
         :param title: title of the pop-up to open
@@ -1338,12 +1393,16 @@ class signinApp(App):
         :type text: str
         :rtype: None
         """
+        Logger.info("textpopup called; on_release="+str(on_release))
         box = BoxLayout(orientation='vertical')
         box.add_widget(Label(text=text))
         mybutton = Button(text='OK', size_hint=(1, 0.25))
         box.add_widget(mybutton)
         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
-        mybutton.bind(on_release=self.stop)
+        if not on_release:
+            on_release=self.stop
+        mybutton.bind(on_release=popup.dismiss)
+        mybutton.bind(on_release=on_release)
         popup.open()
 # 
 #     def eventStartDateTouch(self,*args,**kwargs):

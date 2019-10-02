@@ -99,16 +99,42 @@
     BoxLayout:
         orientation: 'vertical'
         BoxLayout:
+            spacing:10
             height:20
             Label:
                 id: headerLabel
+                halign: 'left'
                 font_size: self.height*0.2
                 text: ''
-            Label:
-                size_hint_x: 0.8
+                size_x: 500
+#                 size_hint_x: 0.2
+            MyButton:
+                id: syncButton
+                text: ''
+                background_normal: ''
+                background_color: (0,0,0,1)
+                color: (0,0,0,0)
+                size_x:120
+                Image:
+                    id: syncButtonImage
+                    source: 'images/cloud.png'
+                    x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                    y: self.parent.y
+                    height: self.parent.height*0.5
+#             Label:
+#                 id: syncLabel
+#                 halign: 'left'
+#                 font_size: self.height*0.2
+#                 text: ''
+#                 size_x: 300
+#                 size_hint_x: 0.2
+#             Label:
+#                 size_hint_x: 0.2
             ClockText:
                 id: clocktext
                 font_size: self.height*0.4
+#                 size_x: 400
+#                 size_hint_x: 0.4
 #             Label:
 #                 size_hint_x: 0.8
             ListButton:
@@ -323,6 +349,22 @@
 <ThankyouScreen>:
     BoxLayout:
         orientation: 'vertical'
+        MyButton:
+            id: syncButton
+            text: ''
+            background_normal: ''
+            background_color: (0,0,0,1)
+            color: (0,0,0,0)
+            Image:
+                id: syncButtonImage
+                source: 'images/cloud.png'
+                x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                y: self.parent.y
+                height: self.parent.height*0.5
+#         Label:
+#             id: syncLabel
+#             font_size: self.height*0.2
+#             text: ''
         Label:
             font_size: self.height*app.defaultTextHeightMultiplier*1/3
             text: 'Thank You'
@@ -537,5 +579,8 @@
         Button:
             text: 'Re-sync'
             on_release: app.sync()
+        Button:
+            text: 'New Event'
+            on_release: app.newEventPrompt()
         Label:
             size_hint_y:0.8   
