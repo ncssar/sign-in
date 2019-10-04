@@ -45,6 +45,8 @@ import shutil
 import sqlite3
 import re
 import datetime
+# import requests
+import json
 
 # from reportlab.lib import colors,utils
 # from reportlab.lib.pagesizes import letter,landscape
@@ -75,6 +77,7 @@ from kivy.properties import BooleanProperty, ListProperty, StringProperty, Objec
 from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
+from kivy.network.urlrequest import UrlRequest
 
 # # from kivy.garden import datetimepicker
 # # DatePicker from https://github.com/Skucul/datepicker
@@ -154,6 +157,10 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
+#         self.host="http://127.0.0.1:5000"
+        self.host="http://caver456.pythonanywhere.com"
+        self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
+        self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
         self.roster={}
         self.eventType="Meeting"
         self.eventName=""
@@ -179,7 +186,14 @@ class signinApp(App):
         self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
+        self.syncCloudIconFileName="images/cloud_white_64x64.png"
+        self.syncCloudUploadStartIconFileName="images/cloud_upload_white_64x64.png"
+        self.syncCloudUploadSuccessIconFileName="images/cloud_upload_white_64x64.png"
+        self.syncCloudDownloadStartIconFileName="images/cloud_download_white_64x64.png"
+        self.syncCloudDownloadSuccessIconFileName="images/cloud_download_white_64x64.png"
+        self.syncNoneIconFileName="images/blank_64x64.png"
         self.agencyNameForPrint="NEVADA COUNTY SHERIFF'S SEARCH AND RESCUE"
+        self.topbar=TopBar()
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
         self.sm.add_widget(SignInScreen(name='signin'))
@@ -212,17 +226,22 @@ class signinApp(App):
         self.typed=''
         self.finalized=False
         self.details.rosterFileName=self.rosterFileName
-        self.startTime=time.time()
+        self.startTime=round(time.time(),2) # round to hundredth of a second to aid database comparison 
         self.readRoster()
 #         self.setupAlphaGrouping()
-        self.clocktext=self.keypad.ids.clocktext
+        self.clocktext=self.topbar.ids.clocktext
         Clock.schedule_interval(self.clocktext.update,1)
         self.sm.current='details'
         self.recoverIfNeeded()
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
         
         self.initSql()
-        return self.sm
+        self.sync()
+        
+        self.container=BoxLayout(orientation='vertical')
+        self.container.add_widget(self.topbar)
+        self.container.add_widget(self.sm)
+        return self.container
 
     def q(self,query):
 #         Logger.info("** EXECUTING QUERY: "+str(query))
@@ -235,19 +254,31 @@ class signinApp(App):
 #             self.q("CREATE TABLE IF NOT EXISTS About("
 #                 "EventName TEXT,"
 #                 "")
-            self.q("CREATE TABLE IF NOT EXISTS SignIn("
-                "ID TEXT,"
-                "Name TEXT,"
-                "Agency TEXT,"
-                "Resources TEXT,"
-                "TimeIn TEXT,"
-                "TimeOut TEXT,"
-                "TotalTime TEXT,"
-                "EpochIn REAL,"
-                "EpochOut REAL,"
-                "TotalSec REAL,"
-                "CellNum TEXT,"
-                "Status TEXT)")
+            # build the initialization query
+            query="CREATE TABLE IF NOT EXISTS SignIn("
+            colTextList=[]
+            for c in self.columns:
+                type='TEXT'
+                if c in self.realCols:
+                    type='REAL'
+                colTextList.append(c+" "+type)
+            query+=','.join(colTextList)
+            query+=")"
+            Logger.info("init query:"+query)
+            self.q(query)
+#             self.q("CREATE TABLE IF NOT EXISTS SignIn("
+#                 "ID TEXT,"
+#                 "Name TEXT,"
+#                 "Agency TEXT,"
+#                 "Resources TEXT,"
+#                 "TimeIn TEXT,"
+#                 "TimeOut TEXT,"
+#                 "TotalTime TEXT,"
+#                 "EpochIn REAL,"
+#                 "EpochOut REAL,"
+#                 "TotalSec REAL,"
+#                 "CellNum TEXT,"
+#                 "Status TEXT)")
             
     def on_keyboard(self,window,key,*args):
 #         Logger.info("key pressed:"+str(key))
@@ -320,10 +351,15 @@ class signinApp(App):
         
     def exitAdminMode(self):
         Logger.info("Exiting admin mode")
-        self.keypad.ids.listbutton.opacity=0
-        self.keypad.ids.listbutton.disabled=True
-        self.keypad.ids.detailsbutton.opacity=0
-        self.keypad.ids.detailsbutton.disabled=True
+        self.topbar.ids.listbutton.opacity=0
+        self.topbar.ids.listbutton.disabled=True
+        self.topbar.ids.listbutton.width=0
+        self.topbar.ids.detailsbutton.opacity=0
+        self.topbar.ids.detailsbutton.disabled=True
+        self.topbar.ids.detailsbutton.width=0
+        self.topbar.ids.keypadbutton.opacity=0
+        self.topbar.ids.keypadbutton.disabled=True
+        self.topbar.ids.keypadbutton.width=0
         self.typed=""
         self.keypad.ids.topLabel.text=""
         self.hide()
@@ -331,10 +367,15 @@ class signinApp(App):
     
     def enterAdminMode(self):
         Logger.info("Entering admin mode")
-        self.keypad.ids.listbutton.opacity=1
-        self.keypad.ids.listbutton.disabled=False
-        self.keypad.ids.detailsbutton.opacity=1
-        self.keypad.ids.detailsbutton.disabled=False
+        self.topbar.ids.listbutton.opacity=1
+        self.topbar.ids.listbutton.disabled=False
+        self.topbar.ids.listbutton.width=64
+        self.topbar.ids.detailsbutton.opacity=1
+        self.topbar.ids.detailsbutton.disabled=False
+        self.topbar.ids.detailsbutton.width=64
+        self.topbar.ids.keypadbutton.opacity=0
+        self.topbar.ids.keypadbutton.disabled=True
+        self.topbar.ids.keypadbutton.width=0
         self.keypad.ids.nameButton.background_color=(1,0.6,0,1)
         self.keypad.ids.nameButton.text="Admin Mode"
         self.keypad.ids.bottomLabel.text="(tap above to exit)"
@@ -642,7 +683,7 @@ class signinApp(App):
             csvWriter.writerow(["## Event Type: "+self.details.eventType])
             csvWriter.writerow(["## Event Location: "+self.details.eventLocation])
             csvWriter.writerow(["## File written "+time.strftime("%a %b %#d %Y %H:%M:%S")])
-            csvWriter.writerow(["ID","Name","Agency","Resource","In","Out","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"])
+            csvWriter.writerow(self.columns)
             for entry in self.signInList:
 #                 # copy in, out, and total seconds to end of list
 #                 entry.append(entry[3])
@@ -806,9 +847,28 @@ class signinApp(App):
 #         doc.build(elements,onFirstPage=self.writePDFHeaderFooter,onLaterPages=self.writePDFHeaderFooter)         
 #         Logger.info("print job completed")
 #         
-    def sync(self):
-        pass
+#     def sync(self):
+#         pass
     
+    def newEventPrompt(self):
+        self.textpopup(title='New Event', text='This will delete all entries; are you sure?',on_release=self.newEvent)
+    
+    def newEvent(self,*args,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
+        Logger.info("newEvent called: eventName="+str(eventName))
+        if not eventStartDate:
+            eventStartDate=today_date()
+        if not eventStartTime:
+            eventStartTime=datetime.datetime.now().strftime("%H:%M")
+        if not eventName:
+            eventName=""
+        if not eventLocation:
+            eventLocation=""
+        self.details.eventName=eventName
+        self.details.eventLocation=eventLocation
+        self.details.eventStartDate=eventStartDate
+        self.details.eventStartTime=eventStartTime
+        self.signInList=[]
+        
     def timeStr(self,sec):
         Logger.info("calling timeStr:"+str(sec))
         if isinstance(sec,str): # return strings as-is
@@ -831,23 +891,33 @@ class signinApp(App):
         return time.strftime("%H:%M",time.localtime(sec))
     
     def switchToBlankKeypad(self,*args):
-#         self.keypad.ids.headerLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  In:"+str(self.getCurrentlySignedInCount())+" Total:"+str(self.getTotalAttendingCount())
-        self.keypad.ids.headerLabel.text=" Total: "+str(self.getTotalAttendingCount())+"   Here: "+str(self.getCurrentlySignedInCount())
+        self.topbar.ids.listbutton.opacity=0
+        self.topbar.ids.listbutton.disabled=True
+        self.topbar.ids.listbutton.width=0
+        self.topbar.ids.detailsbutton.opacity=0
+        self.topbar.ids.detailsbutton.disabled=True
+        self.topbar.ids.detailsbutton.width=0
+        self.topbar.ids.keypadbutton.opacity=0
+        self.topbar.ids.keypadbutton.disabled=True
+        self.topbar.ids.keypadbutton.width=0
+        self.updateHeaderCount()
         self.typed=''
         self.hide()
         self.sm.current='keypad'
         if self.adminMode:
             self.exitAdminMode()
-        if self.getCurrentlySignedInCount()<1:
+        if self.getTotalAttendingCount()>0 and self.getCurrentlySignedInCount()<1:
             self.keypad.ids.topLabel.text="READY TO FINALIZE"
             self.keypad.ids.topLabel.background_color=(0,0,0.5,1)
         else:
             self.keypad.ids.topLabel.text=""
 
-    
+    def updateHeaderCount(self):
+        self.topbar.ids.headerLabel.text=" Total: "+str(self.getTotalAttendingCount())+"   Here: "+str(self.getCurrentlySignedInCount())
+            
     def getCurrentlySignedInCount(self,*args):
         # get the number of entries in signInList that are not signed out
-        Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
+#         Logger.info("Getting signed-in count.  Current signInList:"+str(self.signInList))
         return len([x for x in self.signInList if x[5]==0 or x[5]=='--'])
     
     def getTotalAttendingCount(self,*Args):
@@ -856,7 +926,7 @@ class signinApp(App):
          
     def showList(self,*args):
         Logger.info("showList called")
-        self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
+#         self.theList.ids.listHeadingLabel.text=self.details.eventType+": "+self.details.ids.eventNameField.text+"  Currently here: "+str(self.getCurrentlySignedInCount())+"   Total: "+str(self.getTotalAttendingCount())
         # recycleview needs a single list of strings; it divides into rows every nth element
 #         self.theList.bigList=[str(x) for entry in self.signInList for x in entry[0:7]]
         self.theList.bigList=[]
@@ -871,12 +941,30 @@ class signinApp(App):
         self.sm.transition.direction='down'
 
     def showDetails(self,*args):
+        self.topbar.ids.listbutton.opacity=1
+        self.topbar.ids.listbutton.disabled=False
+        self.topbar.ids.listbutton.width=64
+        self.topbar.ids.detailsbutton.opacity=0
+        self.topbar.ids.detailsbutton.disabled=True
+        self.topbar.ids.detailsbutton.width=0
+        self.topbar.ids.keypadbutton.opacity=1
+        self.topbar.ids.keypadbutton.disabled=False
+        self.topbar.ids.keypadbutton.width=64
         self.sm.transition.direction='up'
         self.sm.current='details'
         self.sm.transition.direction='down'
         
     def showLookup(self,*args):
 #         self.lookup.rosterList=sorted([str(val[0])+" : "+str(key) for key,val in self.roster.items()])
+        self.topbar.ids.listbutton.opacity=0
+        self.topbar.ids.listbutton.disabled=True
+        self.topbar.ids.listbutton.width=0
+        self.topbar.ids.detailsbutton.opacity=0
+        self.topbar.ids.detailsbutton.disabled=True
+        self.topbar.ids.detailsbutton.width=0
+        self.topbar.ids.keypadbutton.opacity=1
+        self.topbar.ids.keypadbutton.disabled=False
+        self.topbar.ids.keypadbutton.width=64
         self.lookup.rosterList=[]
         for key,val in self.roster.items():
             if str(key).startswith("X"):
@@ -955,7 +1043,167 @@ class signinApp(App):
 #             Logger.info("  font size:"+str(widget.font_size))
 #             Logger.info("  widget width:"+str(widthWidget.width))
 #             Logger.info("  texture width:"+str(widget.texture_size[0]))
-             
+
+#     def updateSyncLabel(self,text):
+#         t=self.keypad.ids.syncLabel.text
+#         self.keypad.ids.syncLabel.text=t+text
+#         self.keypad.ids.syncLabel.background_color=1,0,0,1
+#         self.thankyou.ids.syncLabel.text=t+text
+#         
+#     def clearSyncLabel(self,*args):
+#         self.keypad.ids.syncLabel.text=''
+#         self.thankyou.ids.syncLabel.text=''
+        
+    def sendAction(self,entry):
+        Logger.info("sendAction called")
+        d=dict(zip(self.columns,entry))
+        j=json.dumps(d)
+        Logger.info("dict:"+str(d))
+        Logger.info("json:"+str(j))
+        # UrlRequest sends body as plain text by default; need to send json header
+        #  but the api still shows that it came across as an actual dictionary
+        #  rather than plain text; added a handler for this in the api
+        headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+        request=UrlRequest(self.host+"/api/v1/events/current",
+                on_success=self.on_sendAction_success,
+                on_failure=self.on_sendAction_failure,
+                on_error=self.on_sendAction_error,
+                req_body=j,
+                req_headers=headers,
+                method="PUT",
+                debug=True)
+        Logger.info("asynchronous request sent:"+str(request))
+#         self.updateSyncLabel("--> C :")
+        self.topbar.ids.syncButtonImage.source=self.syncCloudUploadStartIconFileName
+
+#     def sendAction(self,entry):
+#         Logger.info("sendAction called")
+#         d=dict(zip(self.columns,entry))
+#         j=json.dumps(d)
+#         Logger.info("dict:"+str(d))
+#         Logger.info("json:"+str(j))
+#         try:
+#             r=requests.put(url=self.host+"/api/v1/events/current",json=j)
+#         except Exception as e:
+#             Logger.info("error during PUT request:\n"+str(e))
+#             return -1
+#         try:
+#             rj=r.json()
+#         except:
+#             Logger.info("reponse error: PUT response has no json:\n"+str(r))
+#             return -1
+#         Logger.info("response json:"+str(rj))
+#         if "validate" not in rj:
+#             Logger.info("response error: PUT response json has no 'validate' entry:\n"+str(rj))
+#             return -1
+#         v=rj["validate"]
+#         if len(v) != 1:
+#             Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
+#             return -1
+#         if d != v[0]:
+#             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
+#             return -1
+#         Logger.info("PUT response has been validated.")
+#         return 0
+#     
+    def on_sendAction_success(self,request,result):
+        Logger.info("on_sendAction_success called:")
+        d=eval(request.req_body) # request body is a string; we want dict for comparison below
+        v=result["validate"]
+        if len(v) != 1:
+            Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
+            return -1
+        if d != v[0]:
+            Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
+            return -1
+        Logger.info("PUT response has been validated.")
+#         self.updateSyncLabel(" OK")
+        self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.sync()
+        
+    def on_sendAction_failure(self,request,result):
+        Logger.info("on_sendAction_failure called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.topbar.ids.syncButtonImage.source=self.syncCloudNoneFileName
+#         self.updateSyncLabel(" X")
+#         Clock.schedule_once(self.clearSyncLabel,3)
+        
+    def on_sendAction_error(self,request,result):
+        Logger.info("on_sendAction_error called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+
+    # this function name may change - right now it is intended to grab the entire table
+    #  from the server using http api
+    def sync(self,clobber=False):
+        Logger.info("sync called")
+        request=UrlRequest(self.host+"/api/v1/events/current",
+                on_success=self.on_sync_success,
+#                 self.on_sync_redirect,
+                on_failure=self.on_sync_failure,
+                on_error=self.on_sync_error)
+        Logger.info("asynchronous request sent:"+str(request))
+        self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
+    
+    def on_sync_success(self,request,result):
+        Logger.info("on_sync_success called")
+        Logger.info(str(result))
+        for d in result:
+            Logger.info("  entry dict:"+str(d))
+            entry=[d[k] for k in self.columns]
+            Logger.info("  entry list:"+str(entry))
+            if entry not in self.signInList: # do not add duplicates
+                self.signInList.append(entry)
+        self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.updateHeaderCount()
+
+    def on_sync_failure(self,request,result):
+        Logger.info("on_sync_failure called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+        
+    def on_sync_error(self,request,result):
+        Logger.info("on_sync_error called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+
+#     def sync(self,clobber=False):
+#         Logger.info("sync called")
+#         try:
+#             r=requests.get(url=self.host+"/api/v1/events/current")
+#         except Exception as e:
+#             Logger.info("error during GET request:\n"+str(e))
+#             return -1
+#         # the response json entries are unordered; need to put them in the right
+#         #  order to store in the internal list of lists
+#         try:
+#             rj=r.json() # r.json() returns a list of dictionaries
+#         except:
+#             Logger.info("reponse error: GET response has no json:\n"+str(r))
+#             return -1
+#         else:
+#             if clobber:
+#                 self.signInList=[]
+#             for d in rj:
+#                 Logger.info("  entry dict:"+str(d))
+#                 entry=[d[k] for k in self.columns]
+#                 Logger.info("  entry list:"+str(entry))
+#                 if entry not in self.signInList: # do not add duplicates
+#                     self.signInList.append(entry)
+#         self.updateHeaderCount()
+    
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
         if len(text)<3: # number or code; it must be from the keypad
@@ -971,7 +1219,9 @@ class signinApp(App):
             elif text=='lu':
                 Logger.info("lookup table requested")
                 self.showLookup()
-            else:    
+            else:
+                if self.typed=="": # this is the first char; do a fresh sync
+                    self.sync()
                 self.typed+=text
                 self.show()
             Logger.info("  typed="+self.typed)
@@ -1101,11 +1351,12 @@ class signinApp(App):
                 name=self.getName(id)
                 # temporary hardcodes 8-16-19
                 agency="NCSSAR"
-                cellNum=self.getCell(id)
-                status="SignIn"
+#                 cellNum=self.getCell(id)
+                cellNum="123-456-7890" # use fake numbers for security while db is public on the web
+                status="SignedIn"
                 idText=self.getIdText(id)
 #                 self.sm.current='signintype'
-                t=time.time()
+                t=round(time.time(),2) # round to hundredth of a second to aid database comparison
                 # get the list of on/enabled ready-to-deploy-as switches
                 #  since objects are always inserted to the front of the children list,
                 #  the actual switch will be .children[0] as long as it was the
@@ -1117,7 +1368,9 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                self.signInList.append([id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status])
+                entry=[id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status]
+                self.signInList.append(entry)
+                self.sendAction(entry)
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -1143,15 +1396,16 @@ class signinApp(App):
 #                 Clock.schedule_once(self.switchToBlankKeypad,2)
             elif 'Sign Out Now' in text or 'change my latest sign-out time to right now' in text:
                 #temporary hardcode 8-16-19
-                status="SignOut"
+                status="SignedOut"
                 inTime=entry[7]
-                outTime=time.time()
-                totalTime=outTime-inTime
+                outTime=round(time.time(),2) # round to hundredth of a second to aid database comparison
+                totalTime=round(outTime-inTime)
                 entry[5]=self.timeStr(outTime)
                 entry[6]=self.timeStr(totalTime)
                 entry[8]=outTime
                 entry[9]=totalTime
-                entry[11]="SignOut"
+                entry[11]=status
+                self.sendAction(entry)
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(inTime)+"\nSigned out at "+self.timeStr(outTime)+"\nTotal time: "+self.timeStr(totalTime)
 #                 self.thankyou.ids.nameLabel.text=self.getName(id)
                 self.setTextToFit(self.thankyou.ids.nameLabel,self.getName(id),initialFontSize=self.thankyou.height*0.1)
@@ -1177,7 +1431,7 @@ class signinApp(App):
         else:
             return True
  
-    def textpopup(self, title='', text=''):
+    def textpopup(self, title='', text='', on_release=None):
         """Open the pop-up with the name.
  
         :param title: title of the pop-up to open
@@ -1186,12 +1440,16 @@ class signinApp(App):
         :type text: str
         :rtype: None
         """
+        Logger.info("textpopup called; on_release="+str(on_release))
         box = BoxLayout(orientation='vertical')
         box.add_widget(Label(text=text))
         mybutton = Button(text='OK', size_hint=(1, 0.25))
         box.add_widget(mybutton)
         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
-        mybutton.bind(on_release=self.stop)
+        if not on_release:
+            on_release=self.stop
+        mybutton.bind(on_release=popup.dismiss)
+        mybutton.bind(on_release=on_release)
         popup.open()
 # 
 #     def eventStartDateTouch(self,*args,**kwargs):
@@ -1260,6 +1518,8 @@ class ClockText(Label):
     def update(self,*args):
         self.text=time.strftime('%H:%M')
 
+class TopBar(BoxLayout):
+    pass
 
 class YesNoSwitch(Switch):
     pass

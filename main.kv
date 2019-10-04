@@ -66,22 +66,23 @@
     height: self.parent.height
     background_color:0,0,0,1
     Image:
-        source: 'images/keypad_64x64_white.png'
-        center_x: self.parent.center_x
-        center_y: self.parent.center_y
+        source: 'images/keypad_white_64x64.png'
+#         x: self.parent.x + (self.parent.width/2) - (self.width/2)
+#         y: self.parent.y + (self.parent.height/2) - (self.height/2)
+        center: self.parent.center
     
 <ListButton@Button>:
     size_hint: None, None
     height:64
     width:64
-    background_normal: 'images/list_64x64_white.png'
+    background_normal: 'images/list_white_64x64.png'
     on_press:app.showList()
 
 <DetailsButton@Button>:
     size_hint: None, None
     height:64
     width:64
-    background_normal: 'images/gear_white.png'
+    background_normal: 'images/gear_white_64x64.png'
     on_press:app.showDetails()
 
 <SelectableLabel>:
@@ -95,26 +96,101 @@
             
 <ClockText>:
 
+<TopBar>:
+    size_hint_y: 0.06
+    spacing: 10
+    BoxLayout:
+        orientation: 'horizontal'
+        Label:
+            id: headerLabel
+            halign: 'left'
+            font_size: self.height*0.2
+            text: ''
+            size_x: 500
+#                 size_hint_x: 0.2
+        MyButton:
+            id: syncButton
+            text: ''
+            background_normal: ''
+            background_color: (0,0,0,1)
+            color: (0,0,0,0)
+            size_x:120
+            Image:
+                id: syncButtonImage
+                source: 'images/cloud.png'
+                x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                y: self.parent.y
+                height: self.parent.height*0.5
+#             Label:
+#                 id: syncLabel
+#                 halign: 'left'
+#                 font_size: self.height*0.2
+#                 text: ''
+#                 size_x: 300
+#                 size_hint_x: 0.2
+#             Label:
+#                 size_hint_x: 0.2
+        ClockText:
+            id: clocktext
+            font_size: self.height*0.4
+#                 size_x: 400
+#                 size_hint_x: 0.4
+#             Label:
+#                 size_hint_x: 0.8
+        # show and hide the buttons depending on current screen
+        ListButton:
+            id: listbutton
+        KeypadButton:
+            id: keypadbutton
+        DetailsButton:
+            id: detailsbutton
+        
 <KeypadScreen>:
     BoxLayout:
         orientation: 'vertical'
-        BoxLayout:
-            height:20
-            Label:
-                id: headerLabel
-                font_size: self.height*0.2
-                text: ''
-            Label:
-                size_hint_x: 0.8
-            ClockText:
-                id: clocktext
-                font_size: self.height*0.4
+#         BoxLayout:
+#             spacing:10
+#             height:20
 #             Label:
-#                 size_hint_x: 0.8
-            ListButton:
-                id: listbutton
-            DetailsButton:
-                id: detailsbutton
+#                 id: headerLabel
+#                 halign: 'left'
+#                 font_size: self.height*0.2
+#                 text: ''
+#                 size_x: 500
+# #                 size_hint_x: 0.2
+#             MyButton:
+#                 id: syncButton
+#                 text: ''
+#                 background_normal: ''
+#                 background_color: (0,0,0,1)
+#                 color: (0,0,0,0)
+#                 size_x:120
+#                 Image:
+#                     id: syncButtonImage
+#                     source: 'images/cloud.png'
+#                     x: self.parent.x + (self.parent.width/2) - (self.width/2)
+#                     y: self.parent.y
+#                     height: self.parent.height*0.5
+# #             Label:
+# #                 id: syncLabel
+# #                 halign: 'left'
+# #                 font_size: self.height*0.2
+# #                 text: ''
+# #                 size_x: 300
+# #                 size_hint_x: 0.2
+# #             Label:
+# #                 size_hint_x: 0.2
+#             ClockText:
+#                 id: clocktext
+#                 font_size: self.height*0.4
+# #                 size_x: 400
+# #                 size_hint_x: 0.4
+# #             Label:
+# #                 size_hint_x: 0.8
+#             ListButton:
+#                 id: listbutton
+#             DetailsButton:
+#                 id: detailsbutton
 
         Label:
             id: topLabel
@@ -156,23 +232,30 @@
         BoxLayout:
             orientation: 'horizontal'
             MyButton:
+#                 id: lookupButton
                 text: 'lu'
                 color: (0,0,0,0)
                 Image:
-                    source: 'images/lookup_white.png'
+                    id: lookupImage
+                    allow_stretch: True
+                    size_hint_y: None
+                    height: self.parent.height*0.8 # this gets the right height but screws up the position
+                    source: 'images/lookup_white_64x64.png'
                     x: self.parent.x + (self.parent.width/2) - (self.width/2)
-                    y: self.parent.y
-                    height: self.parent.height
+                    y: self.parent.y + (self.parent.height/2) - (self.height/2)
             MyButton:
                 text: '0'
             MyButton:
+#                 id: backspaceButton
                 text: 'bs'
                 color: (0,0,0,0)
                 Image:
-                    source: 'images/backspace_white.png'
+                    id: backspaceImage
+                    allow_stretch: True
+                    height: self.parent.height*0.8 # this gets the right height but screws up the position
+                    source: 'images/backspace_white_64x64.png'
                     x: self.parent.x + (self.parent.width/2) - (self.width/2)
-                    y: self.parent.y
-                    height: self.parent.height
+                    y: self.parent.y + (self.parent.height/2) - (self.height/2)
         Label:
             size_hint: None,None
             height: 5
@@ -341,12 +424,12 @@
 <ListScreen>:
     BoxLayout:
         orientation: 'vertical'
-        BoxLayout:
-            size_hint_y: 0.1
-            Label:
-                id: listHeadingLabel
-            KeypadButton:
-            DetailsButton:
+#         BoxLayout:
+#             size_hint_y: 0.1
+#             Label:
+#                 id: listHeadingLabel
+#             KeypadButton:
+#             DetailsButton:
         BoxLayout:
             size_hint_y: None
             height: 30
@@ -394,7 +477,7 @@
                 font_size:self.height*app.defaultTextHeightMultiplier*1/3
                 halign:'center'
                 valign:'middle'
-            KeypadButton:
+#             KeypadButton:
         ComboEdit:
             id:combo
             size_hint_y:0.08
@@ -405,13 +488,13 @@
 <DetailsScreen>:
     BoxLayout:
         orientation: 'vertical'
-        BoxLayout:
-            size_hint_y: None
-            height: 50
-            Label:
-                id: detailsHeadingLabel
-            ListButton:
-            KeypadButton:
+#         BoxLayout:
+#             size_hint_y: None
+#             height: 50
+#             Label:
+#                 id: detailsHeadingLabel
+#             ListButton:
+#             KeypadButton:
         BoxLayout:
             size_hint_y: None
             height: 50
@@ -537,5 +620,8 @@
         Button:
             text: 'Re-sync'
             on_release: app.sync()
+        Button:
+            text: 'New Event'
+            on_release: app.newEventPrompt()
         Label:
             size_hint_y:0.8   
