@@ -48,6 +48,9 @@ import datetime
 # import requests
 import json
 
+# database interface module shared by this app and the signin_api
+from signin_db import *
+
 # from reportlab.lib import colors,utils
 # from reportlab.lib.pagesizes import letter,landscape
 # from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Image, Spacer
@@ -157,8 +160,8 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
-#         self.host="http://127.0.0.1:5000"
-        self.host="http://caver456.pythonanywhere.com"
+        self.cloudServer="http://127.0.0.1:5000"
+#         self.cloudServer="http://caver456.pythonanywhere.com"
         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
         self.roster={}
@@ -167,6 +170,10 @@ class signinApp(App):
         self.eventLocation=""
         self.eventStartDate=""
         self.eventStartTime=""
+        self.localEventID=None
+        self.cloudEventID=None
+        self.signInTableName="SignIn"
+#         self.syncChoicesList=[] # redundant
         self.signInList=[]
 #         self.exportList=[]
 #         self.csvFileName="C:\\Users\\caver\\Downloads\\sign-in.csv"
@@ -232,10 +239,14 @@ class signinApp(App):
         self.clocktext=self.topbar.ids.clocktext
         Clock.schedule_interval(self.clocktext.update,1)
         self.sm.current='details'
-        self.recoverIfNeeded()
+        
+        # prompt for sync choices
+        Clock.schedule_once(self.showStartupSyncChoices,2)
+            
+#         self.recoverIfNeeded()
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
         
-        self.initSql()
+#         self.initSql()
         self.sync()
         
         self.container=BoxLayout(orientation='vertical')
@@ -243,12 +254,26 @@ class signinApp(App):
         self.container.add_widget(self.sm)
         return self.container
 
+    def showStartupSyncChoices(self,*args):
+        createEventsTableIfNeeded()
+        self.buildSyncChoicesList()
+        if len(self.syncChoicesList)==0:
+            self.newEventPopup(text='No sync choices were found;\nfill out this form to create a new event:')
+        else:
+            self.syncChoicesPopup()
+                    
+    def buildSyncChoicesList(self):
+        self.syncChoicesList=[]
+        # connected to cloud server? If so, check for non-finalized cloud events in current time window
+        candidates=sdbGetSyncCandidates() # get local sync choices - useless placeholder
+        Logger.info("sync candidates:"+str(candidates))
+        
     def q(self,query):
 #         Logger.info("** EXECUTING QUERY: "+str(query))
         self.cur.execute(query)
         
     def initSql(self):
-        self.con=sqlite3.connect('test.db')
+        self.con=sqlite3.connect('SignIn.db')
         with self.con:
             self.cur=self.con.cursor()
 #             self.q("CREATE TABLE IF NOT EXISTS About("
@@ -704,9 +729,9 @@ class signinApp(App):
             doToast=doToastOverride # toast if export button was hit, even if auto-export is on
         if download and os.path.isfile(self.csvFileName):
             self.downloadFile(self.csvFileName,"text/csv",doToast)
-        self.q("DELETE FROM SignIn") # easiest code is to delete all rows and start from scratch
+        self.q("DELETE FROM "+self.signInTableName) # easiest code is to delete all rows and start from scratch
         for entry in self.signInList:
-            self.q("INSERT INTO SignIn VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry))
+            self.q("INSERT INTO "+self.signInTableName+" VALUES('{0}','{1}','{2}','{3}','{4}','{5}','{6}',{7},{8},{9},'{10}','{11}')".format(*entry))
         self.con.commit()
         
     def rotateCSV(self,depth=5):
@@ -853,20 +878,73 @@ class signinApp(App):
     def newEventPrompt(self):
         self.textpopup(title='New Event', text='This will delete all entries; are you sure?',on_release=self.newEvent)
     
-    def newEvent(self,*args,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
+    def newEvent(self,*args,eventType=None,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
         Logger.info("newEvent called: eventName="+str(eventName))
-        if not eventStartDate:
-            eventStartDate=today_date()
-        if not eventStartTime:
-            eventStartTime=datetime.datetime.now().strftime("%H:%M")
-        if not eventName:
-            eventName=""
-        if not eventLocation:
-            eventLocation=""
-        self.details.eventName=eventName
-        self.details.eventLocation=eventLocation
-        self.details.eventStartDate=eventStartDate
-        self.details.eventStartTime=eventStartTime
+#         if not eventType:
+#             eventType=""
+#         if not eventStartDate:
+#             eventStartDate=today_date()
+#         if not eventStartTime:
+#             eventStartTime=datetime.datetime.now().strftime("%H:%M")
+#         if not eventName:
+#             eventName=""
+#         if not eventLocation:
+#             eventLocation=""
+#         self.details.eventName=eventName
+#         self.details.eventLocation=eventLocation
+#         self.details.eventStartDate=eventStartDate
+#         self.details.eventStartTime=eventStartTime
+        if eventType:
+            self.details.eventType=eventType
+        else:
+            eventType=self.details.eventType or "Not Specified"
+        if eventName:
+            self.details.eventName=eventName
+        else:
+            eventName=self.details.eventName or "Not Specified"
+        if eventStartDate:
+            self.details.eventStartDate=eventStartDate
+        else:
+            eventStartDate=self.details.eventStartDate or today_date()
+        if eventStartTime:
+            self.details.eventStartTime=eventStartTime
+        else:
+            eventStartTime=self.details.eventStartTime or datetime.datetime.now().strftime("%H:%M")
+        if eventLocation:
+            self.details.eventLocation=eventLocation
+        else:
+            eventLocation=self.details.eventLocation or "Not Specified"
+        
+#         Logger.info("sendAction called")
+#         d=dict(zip(self.columns,entry))
+        d={
+            "EventType":eventType,
+            "EventName":eventName,
+            "EventLocation":eventLocation,
+            "EventStartDate":eventStartDate,
+            "EventStartTime":eventStartTime,
+            "Finalized":0,
+            "LastEditEpoch":time.time()}
+        j=json.dumps(d)
+        Logger.info("dict:"+str(d))
+        Logger.info("json:"+str(j))
+        # UrlRequest sends body as plain text by default; need to send json header
+        #  but the api still shows that it came across as an actual dictionary
+        #  rather than plain text; added a handler for this in the api
+        headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+        request=UrlRequest(self.cloudServer+"/api/v1/events/new",
+            on_success=self.on_newEvent_success,
+            on_failure=self.on_sendAction_failure,
+            on_error=self.on_sendAction_error,
+            req_body=j,
+            req_headers=headers,
+            method="POST",
+            debug=True)
+        Logger.info("new table request sent")
+        r=sdbNewEvent(d) # local db
+        Logger.info("  return val from sdbNewEvent:"+str(r))
+        self.localEventID=r[0]['validate']['LocalEventID']
+        Logger.info("  new eventID="+str(self.localEventID))
         self.signInList=[]
         
     def timeStr(self,sec):
@@ -1057,24 +1135,28 @@ class signinApp(App):
     def sendAction(self,entry):
         Logger.info("sendAction called")
         d=dict(zip(self.columns,entry))
-        j=json.dumps(d)
-        Logger.info("dict:"+str(d))
-        Logger.info("json:"+str(j))
-        # UrlRequest sends body as plain text by default; need to send json header
-        #  but the api still shows that it came across as an actual dictionary
-        #  rather than plain text; added a handler for this in the api
-        headers = {'Content-type': 'application/json','Accept': 'text/plain'}
-        request=UrlRequest(self.host+"/api/v1/events/current",
-                on_success=self.on_sendAction_success,
-                on_failure=self.on_sendAction_failure,
-                on_error=self.on_sendAction_error,
-                req_body=j,
-                req_headers=headers,
-                method="PUT",
-                debug=True)
-        Logger.info("asynchronous request sent:"+str(request))
-#         self.updateSyncLabel("--> C :")
-        self.topbar.ids.syncButtonImage.source=self.syncCloudUploadStartIconFileName
+        sdbAddOrUpdate(self.localEventID,d) # local db
+        if self.cloudEventID:
+            # UrlRequest sends body as plain text by default; need to send json header
+            #  but the api still shows that it came across as an actual dictionary
+            #  rather than plain text; added a handler for this in the api
+            headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+            uri=self.cloudServer+"/api/v1/events/"+str(self.cloudEventID)
+            Logger.info("about to send request to "+uri)
+            j=json.dumps(d)
+    #         Logger.info("dict:"+str(d))
+            Logger.info("json:"+str(j))
+            request=UrlRequest(uri,
+                    on_success=self.on_sendAction_success,
+                    on_failure=self.on_sendAction_failure,
+                    on_error=self.on_sendAction_error,
+                    req_body=j,
+                    req_headers=headers,
+                    method="PUT",
+                    debug=True)
+            Logger.info("asynchronous request sent:"+str(request))
+            self.topbar.ids.syncButtonImage.source=self.syncCloudUploadStartIconFileName
+#           self.updateSyncLabel("--> C :")
 
 #     def sendAction(self,entry):
 #         Logger.info("sendAction called")
@@ -1083,7 +1165,7 @@ class signinApp(App):
 #         Logger.info("dict:"+str(d))
 #         Logger.info("json:"+str(j))
 #         try:
-#             r=requests.put(url=self.host+"/api/v1/events/current",json=j)
+#             r=requests.put(url=self.cloudServer+"/api/v1/events/current",json=j)
 #         except Exception as e:
 #             Logger.info("error during PUT request:\n"+str(e))
 #             return -1
@@ -1119,6 +1201,12 @@ class signinApp(App):
         Logger.info("PUT response has been validated.")
 #         self.updateSyncLabel(" OK")
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+        
+        # now set the 'Synced' column on the local db to indicate successful sync
+        d["Sycned"]=self.cloudEventID
+        sdbAddOrUpdate(self.cloudEventID,d)
+        
+        # do a new sync in case anything changed on the server from other nodes
         self.sync()
         
     def on_sendAction_failure(self,request,result):
@@ -1127,7 +1215,7 @@ class signinApp(App):
         Logger.info("    request body="+str(request.req_body))
         Logger.info("    request headers="+str(request.req_headers))
         Logger.info("  result="+str(result))
-        self.topbar.ids.syncButtonImage.source=self.syncCloudNoneFileName
+        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
 #         self.updateSyncLabel(" X")
 #         Clock.schedule_once(self.clearSyncLabel,3)
         
@@ -1139,17 +1227,38 @@ class signinApp(App):
         Logger.info("  result="+str(result))
         self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
 
+    def on_newEvent_success(self,request,result):
+        Logger.info("on_newEvent_success called:")
+#         d=eval(request.req_body) # request body is a string; we want dict for comparison below
+        v=result["validate"]
+        self.cloudEventID=v["CloudEventID"]
+#         self.signInTableName=str(self.eventID)+"_SignIn"
+#         if len(v) != 1:
+#             Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
+#             return -1
+#         if d != v[0]:
+#             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
+#             return -1
+        Logger.info("new event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
+#         self.updateSyncLabel(" OK")
+        self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.sync()
+
+
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
     def sync(self,clobber=False):
         Logger.info("sync called")
-        request=UrlRequest(self.host+"/api/v1/events/current",
-                on_success=self.on_sync_success,
-#                 self.on_sync_redirect,
-                on_failure=self.on_sync_failure,
-                on_error=self.on_sync_error)
-        Logger.info("asynchronous request sent:"+str(request))
-        self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
+        if self.cloudEventID:
+            request=UrlRequest(self.cloudServer+"/api/v1/events/"+str(self.cloudEventID),
+                    on_success=self.on_sync_success,
+    #                 self.on_sync_redirect,
+                    on_failure=self.on_sync_failure,
+                    on_error=self.on_sync_error)
+            Logger.info("asynchronous request sent:"+str(request))
+            self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
+        else:
+            Logger.info("  no cloudEventID specfiied - nothing to sync")
     
     def on_sync_success(self,request,result):
         Logger.info("on_sync_success called")
@@ -1182,7 +1291,7 @@ class signinApp(App):
 #     def sync(self,clobber=False):
 #         Logger.info("sync called")
 #         try:
-#             r=requests.get(url=self.host+"/api/v1/events/current")
+#             r=requests.get(url=self.cloudServer+"/api/v1/events/current")
 #         except Exception as e:
 #             Logger.info("error during GET request:\n"+str(e))
 #             return -1
@@ -1261,7 +1370,7 @@ class signinApp(App):
                 if self.typed==self.adminCode:
                     self.enterAdminMode()
                 else:
-                    if self.adminMode:
+                    if self.adminMode and self.sm.current is not 'details':
                         self.exitAdminMode()
         elif text=="Admin Mode":
             self.exitAdminMode()
@@ -1382,7 +1491,7 @@ class signinApp(App):
                 self.sm.current='thankyou'
 #                 Logger.info(str(self.signInList))
 #                 self.exportList=copy.deepcopy(self.signInList)
-                self.writeCSV()
+#                 self.writeCSV()
                 Clock.schedule_once(self.switchToBlankKeypad,2)
 #             elif 'in and out' in text:
 #                 t=time.time()
@@ -1416,7 +1525,7 @@ class signinApp(App):
                 self.thankyou.ids.idLabel.text=self.getIdText(id)
                 self.sm.current='thankyou'
 #                 self.exportList=copy.deepcopy(self.signInList)
-                self.writeCSV()
+#                 self.writeCSV()
                 Clock.schedule_once(self.switchToBlankKeypad,3)
             Logger.info(str(self.signInList))
 #             Logger.info(str([{'text':str(x)} for entry in self.signInList for x in entry]))
@@ -1431,6 +1540,41 @@ class signinApp(App):
         else:
             return True
  
+    def newEventPopup(self,text='Fill out the form to create a new event:'):
+        Logger.info("newEventPopup called")
+        box=BoxLayout(orientation='vertical')
+        box.add_widget(Label(text=text))
+        popup=Popup(title='New Event',content=box,size_hint=(None, None),size=(600, 300))
+        button=Button(text='Create New Event',size_hint=(1,0.25))
+        box.add_widget(button)
+        button.bind(on_release=popup.dismiss)
+        button.bind(on_release=self.newEvent)
+        popup.open()
+        
+    def syncChoicesPopup(self,choices=None):
+        Logger.info("syncChoicesPopup called; choices="+str(choices))
+        box=BoxLayout(orientation='vertical')
+        box.add_widget(Label(text='Join an existing event:'))
+        buttons=[]
+        popup=Popup(title='Sync Choices',content=box,size_hint=(None, None),size=(600, 300))
+        for choice in choices:
+            button=Button(text=choice['text'],size_hint=(1,0.25))
+            box.add_widget(button)
+            button.bind(on_release=self.on_join_event)
+            button.bind(on_release=popup.dismiss)
+        box.add_widget(Label(text='Or tap below to create a new event:'))
+        button=Button(text='New Event',size_hint=(1,0.25))
+        box.add_width(button)
+        button.bind(on_release=popup.dismiss)
+        button.bind(on_release=self.on_new_event)
+        popup.open()
+    
+    def on_join_event(self, *args, **kwargs):
+        Logger.info("on_join_event called")
+        
+    def on_new_event(self, *args, **kwargs):
+        Logger.info("on_new_event called")
+        
     def textpopup(self, title='', text='', on_release=None):
         """Open the pop-up with the name.
  
