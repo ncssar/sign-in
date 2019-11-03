@@ -47,6 +47,7 @@ import re
 import datetime
 # import requests
 import json
+from functools import partial
 
 # database interface module shared by this app and the signin_api
 from signin_db import *
@@ -210,6 +211,7 @@ class signinApp(App):
         self.sm.add_widget(ThankyouScreen(name='thankyou'))
         self.sm.add_widget(ListScreen(name='theList'))
         self.sm.add_widget(LookupScreen(name='lookup'))
+        self.sm.add_widget(NewEventScreen(name='newevent'))
         self.sm.add_widget(DetailsScreen(name='details'))
         self.keypad=self.sm.get_screen('keypad')
         self.signin=self.sm.get_screen('signin')
@@ -223,6 +225,7 @@ class signinApp(App):
         # auto-blank the lookup text and results when the screen is changed
         self.lookup.on_enter=self.lookupEnter
         self.lookup.on_leave=self.lookupLeave
+        self.newevent=self.sm.get_screen('newevent')
         self.details=self.sm.get_screen('details')
 #         self.keypad.on_enter=self.setKeepScreenOn()
 #         self.keypad.on_leave=self.clearKeepScreenOn()
@@ -258,15 +261,18 @@ class signinApp(App):
         createEventsTableIfNeeded()
         self.buildSyncChoicesList()
         if len(self.syncChoicesList)==0:
-            self.newEventPopup(text='No sync choices were found;\nfill out this form to create a new event:')
+            self.textpopup(
+                    title='No sync choices',
+                    text='No sync choices were found;\nfill out the following form to create a new event:',
+                    on_release=self.showNewEvent)
         else:
             self.syncChoicesPopup()
                     
     def buildSyncChoicesList(self):
         self.syncChoicesList=[]
         # connected to cloud server? If so, check for non-finalized cloud events in current time window
-        candidates=sdbGetSyncCandidates() # get local sync choices - useless placeholder
-        Logger.info("sync candidates:"+str(candidates))
+        self.syncChoicesList=sdbGetSyncCandidates(timeWindowDaysAgo=5) # get local sync choices - useless placeholder
+        Logger.info("sync candidates:"+str(self.syncChoicesList))
         
     def q(self,query):
 #         Logger.info("** EXECUTING QUERY: "+str(query))
@@ -895,25 +901,25 @@ class signinApp(App):
 #         self.details.eventStartDate=eventStartDate
 #         self.details.eventStartTime=eventStartTime
         if eventType:
-            self.details.eventType=eventType
+            self.newevent.eventType=eventType
         else:
-            eventType=self.details.eventType or "Not Specified"
+            eventType=self.newevent.eventType or "Not Specified"
         if eventName:
-            self.details.eventName=eventName
+            self.newevent.eventName=eventName
         else:
-            eventName=self.details.eventName or "Not Specified"
+            eventName=self.newevent.eventName or "Not Specified"
         if eventStartDate:
-            self.details.eventStartDate=eventStartDate
+            self.newevent.eventStartDate=eventStartDate
         else:
-            eventStartDate=self.details.eventStartDate or today_date()
+            eventStartDate=self.newevent.eventStartDate or today_date()
         if eventStartTime:
-            self.details.eventStartTime=eventStartTime
+            self.newevent.eventStartTime=eventStartTime
         else:
-            eventStartTime=self.details.eventStartTime or datetime.datetime.now().strftime("%H:%M")
+            eventStartTime=self.newevent.eventStartTime or datetime.datetime.now().strftime("%H:%M")
         if eventLocation:
-            self.details.eventLocation=eventLocation
+            self.newevent.eventLocation=eventLocation
         else:
-            eventLocation=self.details.eventLocation or "Not Specified"
+            eventLocation=self.newevent.eventLocation or "Not Specified"
         
 #         Logger.info("sendAction called")
 #         d=dict(zip(self.columns,entry))
@@ -934,8 +940,8 @@ class signinApp(App):
         headers = {'Content-type': 'application/json','Accept': 'text/plain'}
         request=UrlRequest(self.cloudServer+"/api/v1/events/new",
             on_success=self.on_newEvent_success,
-            on_failure=self.on_sendAction_failure,
-            on_error=self.on_sendAction_error,
+            on_failure=self.on_newEvent_failure,
+            on_error=self.on_newEvent_error,
             req_body=j,
             req_headers=headers,
             method="POST",
@@ -1018,6 +1024,9 @@ class signinApp(App):
         self.sm.current='theList'
         self.sm.transition.direction='down'
 
+    def showNewEvent(self,*args):
+        self.sm.current='newevent'
+        
     def showDetails(self,*args):
         self.topbar.ids.listbutton.opacity=1
         self.topbar.ids.listbutton.disabled=False
@@ -1241,9 +1250,17 @@ class signinApp(App):
 #             return -1
         Logger.info("new event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
 #         self.updateSyncLabel(" OK")
+        self.switchToBlankKeypad()
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
         self.sync()
+        
+    def on_newEvent_failure(self,request,result):
+        self.on_sendAction_failure(request,result)
+        self.switchToBlankKeypad()
 
+    def on_newEvent_error(self,request,result):
+        self.on_sendAction_error(request,result)
+        self.switchToBlankKeypad()
 
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
@@ -1535,47 +1552,49 @@ class signinApp(App):
     def on_request_close(self, *args, **kwargs):
         Logger.info("on_request_close called")
         if self.adminMode:
-            self.textpopup(title='Exit', text='Are you sure?')
+            self.textpopup(title='Exit', text='Are you sure?', buttonText='Yes')
             return True
         else:
             return True
  
     def newEventPopup(self,text='Fill out the form to create a new event:'):
         Logger.info("newEventPopup called")
-        box=BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=text))
-        popup=Popup(title='New Event',content=box,size_hint=(None, None),size=(600, 300))
-        button=Button(text='Create New Event',size_hint=(1,0.25))
-        box.add_widget(button)
-        button.bind(on_release=popup.dismiss)
-        button.bind(on_release=self.newEvent)
-        popup.open()
+#         box=BoxLayout(orientation='vertical')
+#         box.add_widget(Label(text=text))
+#         popup=Popup(title='New Event',content=box,size_hint=(None, None),size=(600, 300))
+#         button=Button(text='Create New Event',size_hint=(1,0.25))
+#         box.add_widget(button)
+#         button.bind(on_release=popup.dismiss)
+#         button.bind(on_release=self.newEvent)
+#         popup.open()
         
     def syncChoicesPopup(self,choices=None):
+        choices=choices or self.syncChoicesList
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
         box.add_widget(Label(text='Join an existing event:'))
         buttons=[]
-        popup=Popup(title='Sync Choices',content=box,size_hint=(None, None),size=(600, 300))
+        popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
         for choice in choices:
-            button=Button(text=choice['text'],size_hint=(1,0.25))
+            button=Button(text=choice['EventName'])
             box.add_widget(button)
-            button.bind(on_release=self.on_join_event)
+            button.bind(on_release=partial(self.joinEvent,choice))
             button.bind(on_release=popup.dismiss)
         box.add_widget(Label(text='Or tap below to create a new event:'))
-        button=Button(text='New Event',size_hint=(1,0.25))
-        box.add_width(button)
+        button=Button(text='New Event')
+        box.add_widget(button)
         button.bind(on_release=popup.dismiss)
-        button.bind(on_release=self.on_new_event)
+        button.bind(on_release=self.showNewEvent)
         popup.open()
     
-    def on_join_event(self, *args, **kwargs):
-        Logger.info("on_join_event called")
+    def joinEvent(self,choice,*args):
+        Logger.info("joinEvent called: "+str(choice))
         
     def on_new_event(self, *args, **kwargs):
         Logger.info("on_new_event called")
+        self.sm.current='newevent'
         
-    def textpopup(self, title='', text='', on_release=None):
+    def textpopup(self, title='', text='', buttonText='OK', on_release=None):
         """Open the pop-up with the name.
  
         :param title: title of the pop-up to open
@@ -1587,9 +1606,10 @@ class signinApp(App):
         Logger.info("textpopup called; on_release="+str(on_release))
         box = BoxLayout(orientation='vertical')
         box.add_widget(Label(text=text))
-        mybutton = Button(text='OK', size_hint=(1, 0.25))
+        mybutton = Button(text=buttonText, size_hint=(1, 0.25))
         box.add_widget(mybutton)
-        popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
+#         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
+        popup = Popup(title=title, content=box, size_hint=(0.8,0.25))
         if not on_release:
             on_release=self.stop
         mybutton.bind(on_release=popup.dismiss)
@@ -1668,10 +1688,8 @@ class TopBar(BoxLayout):
 class YesNoSwitch(Switch):
     pass
 
-
 class KeypadScreen(Screen):
     pass
-
 
 class SignInScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
@@ -1704,6 +1722,16 @@ class LookupScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to keypad screen
     rosterList=ListProperty(["id"])
 
+
+# class NewEventPopup(BoxLayout):
+class NewEventScreen(Screen):
+    eventType=StringProperty("")
+    eventName=StringProperty("")
+    eventStartDate=StringProperty(today_date())
+    eventStartTime=StringProperty(datetime.datetime.now().strftime("%H:%M"))
+    eventLocation=StringProperty("")
+    rosterFileName=StringProperty("")
+    
     
 class DetailsScreen(Screen):
     eventType=StringProperty("")

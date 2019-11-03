@@ -130,9 +130,9 @@ def sdbHome():
 <p>API for interacting with the sign-in databases</p>'''
 
 # getSyncCandidates: return a list of non-finalized events in the current time window
-def sdbGetSyncCandidates():
+def sdbGetSyncCandidates(timeWindowDaysAgo=1):
     now=time.time()
-    dayAgo=now-24*60*60
+    dayAgo=now-(timeWindowDaysAgo*24*60*60)
 #     candidates=q('SELECT * FROM Events ORDER BY LocalEventID WHERE Finalized != "Yes" AND EventStartEpoch BETWEEN '+str(now)+' AND '+str(dayAgo)+';')
     query='SELECT * FROM Events WHERE "EventStartEpoch" > '+str(dayAgo)+' ORDER BY LocalEventID;'
     print("query string: "+query)
