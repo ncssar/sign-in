@@ -271,7 +271,7 @@ class signinApp(App):
     def buildSyncChoicesList(self):
         self.syncChoicesList=[]
         # connected to cloud server? If so, check for non-finalized cloud events in current time window
-        self.syncChoicesList=sdbGetSyncCandidates(timeWindowDaysAgo=5) # get local sync choices - useless placeholder
+        self.syncChoicesList=sdbGetSyncCandidates(timeWindowDaysAgo=10) # get local sync choices - useless placeholder
         Logger.info("sync candidates:"+str(self.syncChoicesList))
         
     def q(self,query):
@@ -1576,9 +1576,12 @@ class signinApp(App):
         buttons=[]
         popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
         for choice in choices:
-            button=Button(text=choice['EventName'])
+            button=ButtonWithImage()
+            button.text=choice['EventName']
+            if choice['EventName']!='Not Specified':
+                button.source=self.syncCloudIconFileName
             box.add_widget(button)
-            button.bind(on_release=partial(self.joinEvent,choice))
+            button.bind(on_release=partial(self.syncToEvent,choice))
             button.bind(on_release=popup.dismiss)
         box.add_widget(Label(text='Or tap below to create a new event:'))
         button=Button(text='New Event')
@@ -1587,8 +1590,8 @@ class signinApp(App):
         button.bind(on_release=self.showNewEvent)
         popup.open()
     
-    def joinEvent(self,choice,*args):
-        Logger.info("joinEvent called: "+str(choice))
+    def syncToEvent(self,choice,*args):
+        Logger.info("syncToEvent called: "+str(choice))
         
     def on_new_event(self, *args, **kwargs):
         Logger.info("on_new_event called")
@@ -1627,6 +1630,8 @@ class SelectableRecycleGridLayout(LayoutSelectionBehavior,
                                   RecycleGridLayout):
     ''' Adds selection and focus behaviour to the view. '''
 
+class ButtonWithImage(Button):
+    pass
 
 class SelectableLabel(RecycleDataViewBehavior, Label):
     ''' Add selection support to the Label '''

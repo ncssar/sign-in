@@ -20,6 +20,13 @@
 #:import DatePicker datepicker
 #:import TimePicker timepicker
 
+<ButtonWithImage@Button>:
+    source: './images/cloud.png'
+    Image:
+        source: self.parent.source
+        pos: self.parent.pos
+        height: self.parent.height*0.75
+        
 <MyButton@Button>:
     text: 'My Key'
     font_size: min(self.height*app.defaultTextHeightMultiplier,self.parent.parent.height*0.05)
