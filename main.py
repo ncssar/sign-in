@@ -202,6 +202,7 @@ class signinApp(App):
         self.syncNoneIconFileName="images/blank_64x64.png"
         self.agencyNameForPrint="NEVADA COUNTY SHERIFF'S SEARCH AND RESCUE"
         self.topbar=TopBar()
+        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
         self.sm=ScreenManager()
         self.sm.add_widget(KeypadScreen(name='keypad'))
         self.sm.add_widget(SignInScreen(name='signin'))
@@ -241,7 +242,7 @@ class signinApp(App):
 #         self.setupAlphaGrouping()
         self.clocktext=self.topbar.ids.clocktext
         Clock.schedule_interval(self.clocktext.update,1)
-        self.sm.current='details'
+        self.showDetails()
         
         # prompt for sync choices
         Clock.schedule_once(self.showStartupSyncChoices,2)
@@ -257,23 +258,6 @@ class signinApp(App):
         self.container.add_widget(self.sm)
         return self.container
 
-    def showStartupSyncChoices(self,*args):
-        createEventsTableIfNeeded()
-        self.buildSyncChoicesList()
-        if len(self.syncChoicesList)==0:
-            self.textpopup(
-                    title='No sync choices',
-                    text='No sync choices were found;\nfill out the following form to create a new event:',
-                    on_release=self.showNewEvent)
-        else:
-            self.syncChoicesPopup()
-                    
-    def buildSyncChoicesList(self):
-        self.syncChoicesList=[]
-        # connected to cloud server? If so, check for non-finalized cloud events in current time window
-        self.syncChoicesList=sdbGetSyncCandidates(timeWindowDaysAgo=10) # get local sync choices - useless placeholder
-        Logger.info("sync candidates:"+str(self.syncChoicesList))
-        
     def q(self,query):
 #         Logger.info("** EXECUTING QUERY: "+str(query))
         self.cur.execute(query)
@@ -885,7 +869,7 @@ class signinApp(App):
         self.textpopup(title='New Event', text='This will delete all entries; are you sure?',on_release=self.newEvent)
     
     def newEvent(self,*args,eventType=None,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
-        Logger.info("newEvent called: eventName="+str(eventName))
+        Logger.info("newEvent called")
 #         if not eventType:
 #             eventType=""
 #         if not eventStartDate:
@@ -1220,7 +1204,7 @@ class signinApp(App):
         
     def on_sendAction_failure(self,request,result):
         Logger.info("on_sendAction_failure called:")
-        Logger.info("  request="+str(request))
+        Logger.info("  request was sent to "+str(request.url))
         Logger.info("    request body="+str(request.req_body))
         Logger.info("    request headers="+str(request.req_headers))
         Logger.info("  result="+str(result))
@@ -1230,7 +1214,7 @@ class signinApp(App):
         
     def on_sendAction_error(self,request,result):
         Logger.info("on_sendAction_error called:")
-        Logger.info("  request="+str(request))
+        Logger.info("  request was sent to "+str(request.url))
         Logger.info("    request body="+str(request.req_body))
         Logger.info("    request headers="+str(request.req_headers))
         Logger.info("  result="+str(result))
@@ -1262,6 +1246,103 @@ class signinApp(App):
         self.on_sendAction_error(request,result)
         self.switchToBlankKeypad()
 
+    def showStartupSyncChoices(self,*args):
+        createEventsTableIfNeeded()
+        self.buildSyncChoicesList()
+        # don't display the dialog here; display it in each callback, since UrlRequest
+        #  cannot be made syncronous (wait() doesn't work)
+        
+    def showStartupSyncChoices_part2(self):
+        if len(self.syncChoicesList)==0:
+            self.textpopup(
+                    title='No sync choices',
+                    text='No sync choices were found;\nfill out the following form to create a new event:',
+                    on_release=self.showNewEvent)
+        else:
+            self.syncChoicesPopup()
+
+    # must jump through these hoops to call the parts in sequence, since UrlRequest
+    #  cannot be made syncronous (the wait() function hangs for error or failure)                    
+    def buildSyncChoicesList(self):
+        self.syncChoicesList=[]
+        # connected to cloud server? If so, check for non-finalized cloud events in current time window
+        request=UrlRequest(self.cloudServer+"/api/v1/events",
+            on_success=self.on_getCloudEvents_success,
+            on_failure=self.on_getCloudEvents_error,
+            on_error=self.on_getCloudEvents_error,
+            timeout=3,
+            method="GET",
+            debug=True)
+        
+    def buildSyncChoicesList_part2(self):
+        Logger.info("buildSyncChoicesList_part2 called")
+        # add local sync choices here
+        self.syncChoicesList.extend(sdbGetSyncCandidates(timeWindowDaysAgo=10)) # get local sync choices
+        Logger.info("sync candidates:"+str(self.syncChoicesList))
+        # show the dialog now
+        self.showStartupSyncChoices_part2()
+        
+    def on_getCloudEvents_success(self,request,result):
+        Logger.info("on_getCloudEvents_success called:")
+        Logger.info("  result="+str(result))
+        # add cloud sync choices here; response will have LocalEventID but here we
+        #  need to map that to CloudEventID instead
+        for choice in result:
+            choice["CloudEventID"]=choice["LocalEventID"]
+            choice["LocalEventID"]=None
+            self.syncChoicesList.append(choice)
+        self.buildSyncChoicesList_part2()
+        
+    def on_getCloudEvents_failure(self,request,result):
+        Logger.info("on_getCloudEvents_failure called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.buildSyncChoicesList_part2()
+
+    def on_getCloudEvents_error(self,request,result):
+        Logger.info("on_getCloudEvents_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.buildSyncChoicesList_part2()
+        
+    def syncChoicesPopup(self,choices=None):
+        choices=choices or self.syncChoicesList
+        Logger.info("syncChoicesPopup called; choices="+str(choices))
+        box=BoxLayout(orientation='vertical')
+        box.add_widget(Label(text='Join an existing event:'))
+        buttons=[]
+        popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
+        for choice in choices:
+            button=ButtonWithImage()
+            button.text=choice['EventName']
+            if choice['CloudEventID']:
+                button.source=self.syncCloudIconFileName
+            else:
+                button.source=self.syncNoneIconFileName
+            box.add_widget(button)
+            button.bind(on_release=partial(self.syncToEvent,choice))
+            button.bind(on_release=popup.dismiss)
+        box.add_widget(Label(text='Or tap below to create a new event:'))
+        button=Button(text='New Event')
+        box.add_widget(button)
+        button.bind(on_release=popup.dismiss)
+        button.bind(on_release=self.showNewEvent)
+        popup.open()
+    
+    def syncToEvent(self,choice,*args):
+        Logger.info("syncToEvent called: "+str(choice))
+        # cloud's response LocalEventID becomes this session's cloudEventID
+        self.cloudEventID=choice["CloudEventID"]
+        if self.cloudEventID:
+            self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+        self.localEventID=choice["LocalEventID"]
+        if not self.localEventID:
+            Logger.error("Synced to an event that has no localEventID")
+            
     # this function name may change - right now it is intended to grab the entire table
     #  from the server using http api
     def sync(self,clobber=False):
@@ -1280,6 +1361,22 @@ class signinApp(App):
     def on_sync_success(self,request,result):
         Logger.info("on_sync_success called")
         Logger.info(str(result))
+        # fix #55: result could be html text, i.e. the login page on a guest wifi
+        #  https://stackoverflow.com/a/1952655/3577105
+#         try:
+#             i=iter(result)
+#         except TypeError:
+#             print("result is not iterable")
+#             self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+#         else:
+#             for d in result:
+#                 Logger.info("  entry dict:"+str(d))
+#                 entry=[d[k] for k in self.columns]
+#                 Logger.info("  entry list:"+str(entry))
+#                 if entry not in self.signInList: # do not add duplicates
+#                     self.signInList.append(entry)
+#             self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+#             self.updateHeaderCount()
         for d in result:
             Logger.info("  entry dict:"+str(d))
             entry=[d[k] for k in self.columns]
@@ -1567,31 +1664,6 @@ class signinApp(App):
 #         button.bind(on_release=popup.dismiss)
 #         button.bind(on_release=self.newEvent)
 #         popup.open()
-        
-    def syncChoicesPopup(self,choices=None):
-        choices=choices or self.syncChoicesList
-        Logger.info("syncChoicesPopup called; choices="+str(choices))
-        box=BoxLayout(orientation='vertical')
-        box.add_widget(Label(text='Join an existing event:'))
-        buttons=[]
-        popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
-        for choice in choices:
-            button=ButtonWithImage()
-            button.text=choice['EventName']
-            if choice['EventName']!='Not Specified':
-                button.source=self.syncCloudIconFileName
-            box.add_widget(button)
-            button.bind(on_release=partial(self.syncToEvent,choice))
-            button.bind(on_release=popup.dismiss)
-        box.add_widget(Label(text='Or tap below to create a new event:'))
-        button=Button(text='New Event')
-        box.add_widget(button)
-        button.bind(on_release=popup.dismiss)
-        button.bind(on_release=self.showNewEvent)
-        popup.open()
-    
-    def syncToEvent(self,choice,*args):
-        Logger.info("syncToEvent called: "+str(choice))
         
     def on_new_event(self, *args, **kwargs):
         Logger.info("on_new_event called")

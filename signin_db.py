@@ -138,12 +138,17 @@ def sdbGetSyncCandidates(timeWindowDaysAgo=1):
     print("query string: "+query)
     candidates=q(query)
     return candidates
-    
-def sdbGetEvent(eventID):
-    return jsonify(q('SELECT * FROM '+str(eventID)+'_SignIn;'))
 
-def sdbAll():
-    return jsonify(q('SELECT * FROM SignIn;'))
+# def sdbGetEvent(eventID):
+#     return jsonify(q('SELECT * FROM '+str(eventID)+'_SignIn;'))
+# 
+def sdbGetEvents(since=0,nonFinalizedOnly=False):
+    print("sdbGetEvents called: since="+str(since)+" nonFinalizedOnly="+str(nonFinalizedOnly))
+#     return jsonify(q('SELECT * FROM Events;'))
+    return q('SELECT * FROM Events;')
+
+# def sdbAll():
+#     return jsonify(q('SELECT * FROM SignIn;'))
 
 def sdbGetEventHTML(eventID):
     tableName=str(eventID)+"_SignIn"
