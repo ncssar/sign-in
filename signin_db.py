@@ -26,6 +26,7 @@ import time
 EVENTS_COLS=[
     # on the cloud server, LocalEventID will equal CloudEventID
     ["CloudEventID","INTEGER"],
+    ["D4HID","INTEGER"],
     ["LANIDString","TEXT"],
     ["EventType","TEXT"],
     ["EventName","TEXT"],
@@ -69,7 +70,6 @@ def q(query):
     return r
 
 def createEventsTableIfNeeded():
-    # on the cloud server, LocalEventID will equal CloudEventID
     colString="'LocalEventID' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in EVENTS_COLS])
     query='CREATE TABLE IF NOT EXISTS "Events" ('+colString+');'
@@ -145,7 +145,13 @@ def sdbGetSyncCandidates(timeWindowDaysAgo=1):
 def sdbGetEvents(since=0,nonFinalizedOnly=False):
     print("sdbGetEvents called: since="+str(since)+" nonFinalizedOnly="+str(nonFinalizedOnly))
 #     return jsonify(q('SELECT * FROM Events;'))
+    createEventsTableIfNeeded()
     return q('SELECT * FROM Events;')
+
+def sdbGetEvent(eventID):
+    tableName=str(eventID)+"_SignIn"
+    all=q('SELECT * FROM "'+tableName+'";')
+    return all
 
 # def sdbAll():
 #     return jsonify(q('SELECT * FROM SignIn;'))

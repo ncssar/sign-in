@@ -45,7 +45,8 @@ import shutil
 import sqlite3
 import re
 import datetime
-# import requests
+import requests
+from requests.exceptions import Timeout
 import json
 from functools import partial
 
@@ -163,8 +164,9 @@ class signinApp(App):
         self.adminMode=False
         self.cloudServer="http://127.0.0.1:5000"
 #         self.cloudServer="http://caver456.pythonanywhere.com"
-        self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
-        self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
+#         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
+        self.columns=[x[0] for x in SIGNIN_COLS]
+#         self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
         self.roster={}
         self.eventType="Meeting"
         self.eventName=""
@@ -243,58 +245,110 @@ class signinApp(App):
         self.clocktext=self.topbar.ids.clocktext
         Clock.schedule_interval(self.clocktext.update,1)
         self.showDetails()
-        
-        # prompt for sync choices
-        Clock.schedule_once(self.showStartupSyncChoices,2)
             
 #         self.recoverIfNeeded()
         Logger.info("Valid roster files:"+str(self.scanForRosters()))
-        
-#         self.initSql()
-        self.sync()
+          
+#         self.initCloud()
+# #         self.initSql()
+#         self.sync()
         
         self.container=BoxLayout(orientation='vertical')
         self.container.add_widget(self.topbar)
         self.container.add_widget(self.sm)
+
+        self.initPopup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
+
+        # do the rest of the startup after GUI is launched:
+        #  (this method is recommended in some posts, and is more reliable
+        #   that on_start which runs before the main loop starts, meaning
+        #   code during on_start happens with a frozed white GUI; but it also
+        #   has a race condition - if you call it too soon, you get a crazy GUI)
+        Clock.schedule_once(self.startup,2)
+        
         return self.container
 
     def q(self,query):
 #         Logger.info("** EXECUTING QUERY: "+str(query))
         self.cur.execute(query)
         
-    def initSql(self):
-        self.con=sqlite3.connect('SignIn.db')
-        with self.con:
-            self.cur=self.con.cursor()
-#             self.q("CREATE TABLE IF NOT EXISTS About("
-#                 "EventName TEXT,"
-#                 "")
-            # build the initialization query
-            query="CREATE TABLE IF NOT EXISTS SignIn("
-            colTextList=[]
-            for c in self.columns:
-                type='TEXT'
-                if c in self.realCols:
-                    type='REAL'
-                colTextList.append(c+" "+type)
-            query+=','.join(colTextList)
-            query+=")"
-            Logger.info("init query:"+query)
-            self.q(query)
-#             self.q("CREATE TABLE IF NOT EXISTS SignIn("
-#                 "ID TEXT,"
-#                 "Name TEXT,"
-#                 "Agency TEXT,"
-#                 "Resources TEXT,"
-#                 "TimeIn TEXT,"
-#                 "TimeOut TEXT,"
-#                 "TotalTime TEXT,"
-#                 "EpochIn REAL,"
-#                 "EpochOut REAL,"
-#                 "TotalSec REAL,"
-#                 "CellNum TEXT,"
-#                 "Status TEXT)")
-            
+#     def initSql(self):
+#         self.con=sqlite3.connect('SignIn.db')
+#         with self.con:
+#             self.cur=self.con.cursor()
+# #             self.q("CREATE TABLE IF NOT EXISTS About("
+# #                 "EventName TEXT,"
+# #                 "")
+#             # build the initialization query
+#             query="CREATE TABLE IF NOT EXISTS SignIn("
+#             colTextList=[]
+#             for c in self.columns:
+#                 type='TEXT'
+#                 if c in self.realCols:
+#                     type='REAL'
+#                 colTextList.append(c+" "+type)
+#             query+=','.join(colTextList)
+#             query+=")"
+#             Logger.info("init query:"+query)
+#             self.q(query)
+# #             self.q("CREATE TABLE IF NOT EXISTS SignIn("
+# #                 "ID TEXT,"
+# #                 "Name TEXT,"
+# #                 "Agency TEXT,"
+# #                 "Resources TEXT,"
+# #                 "TimeIn TEXT,"
+# #                 "TimeOut TEXT,"
+# #                 "TotalTime TEXT,"
+# #                 "EpochIn REAL,"
+# #                 "EpochOut REAL,"
+# #                 "TotalSec REAL,"
+# #                 "CellNum TEXT,"
+# #                 "Status TEXT)")
+
+    def startup(self,*args):
+        # perform startup tasks here that should take place after the GUI is alive:
+        # - check for connections (cloud and LAN(s))
+        Logger.info("startup called")
+#         popup=self.textpopup(title='Please Wait',text='Checking connections...',buttonText=None,size_hint=(0.9,0.3))
+#         popup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
+        createEventsTableIfNeeded()
+        Logger.info("calling initCloud")
+        self.initCloud()
+        Logger.info("calling initLANs")
+        self.initLANs()
+        Logger.info("calling popup.dismiss")
+#         popup.dismiss()
+        self.initPopup.dismiss()
+        Logger.info("calling buildSyncChoicesList")
+        if not self.recoverIfNeeded():
+            self.buildSyncChoicesList()
+        Logger.info("startup complete")
+
+    def initCloud(self):
+        self.cloud=False
+        try:
+            response=requests.get(self.cloudServer+"/api/v1/",timeout=(3,2))
+        except Timeout:
+            Logger.info('Cloud server did not respond in the allowed timeout period.  Proceeding without cloud connection.')
+        except ConnectionRefusedError:
+            Logger.info('Cloud server connection refused.  Proceeding without cloud connection.')
+        except:
+            Logger.info('CLoud server unhandled exception.  Proceeding without cloud connection.')
+        else:
+            Logger.info('Cloud server connection established.')
+            self.cloud=True
+
+    def initLANs(self):
+        pass
+    
+#         request=UrlRequest(self.cloudServer+"/api/v1/",
+#             on_success=lambda *args: self.cloud=True,
+#             on_failure=lambda *args: self.cloud=False,
+#             on_error=lambda *args: self.cloud=False,
+#             timeout=3,
+#             method="GET",
+#             debug=True)
+#              
     def on_keyboard(self,window,key,*args):
 #         Logger.info("key pressed:"+str(key))
         if key==27: # esc key, or android 'back' button
@@ -317,41 +371,52 @@ class signinApp(App):
         return True
     
     def recoverIfNeeded(self):
-        # 1. check for files in the data dir with modification date within 24 hours
-        # 2. of those, check to see which are not finalized
-        # 3. if just one is not finalized, and it's the most recent one, load it
-        # 4. if more than one is not finalized, show a pick box to let user
-        #      select which one to restore
-        # 5. if everything within the last 24 hours is finalized, do not load anything
-        #   if a finalized version of a file exists, don't try to load any of its .bak<x>.csv files
-        Logger.info("entering recoverIfNeeded: start time="+str(self.startTime))
-        csvList=self.scanForCSV()
-        Logger.info("Valid CSV files:"+str(csvList))
-        finalized=[x[0] for x in csvList if x[4]]
-        Logger.info("Finalized CSV files:"+str(finalized))
-#         each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
-        csvCandidates1=[x for x in csvList if self.startTime-x[1]<86400 and not x[4]]
-        csvCandidates1.sort(key=sortSecond)
-        csvCandidates1.reverse() # most recent first, i.e. descending order
-        # remove .bak files that have a finalized non-.bak version - could probably be refactored
-        csvCandidates=[]
-        for x in csvCandidates1:
-            excludeFlag=False
-            if re.match(".*\.bak[0-9]+\.csv$",x[0]): # it's a backup file
-                nonBakName=re.sub("\.bak[0-9]+","",x[0])
-                Logger.info("  found a backup file "+x[0]+" - looking for finalized original file "+nonBakName)
-                if nonBakName in finalized:
-                    Logger.info("    found finalized original file "+nonBakName+"; excluding "+x[0]+" from candidates list")
-                    excludeFlag=True
-            if not excludeFlag:
-                csvCandidates.append(x)
-
-        Logger.info("Candidates for recover:"+str(csvCandidates))
-        if len(csvCandidates)>>0:
-            Logger.info("Reading "+csvCandidates[0][0])
-            self.readCSV(csvCandidates[0][0])
+        Logger.info("entering recoverIfNeeded")
+        candidates=sdbGetSyncCandidates()
+        Logger.info("  sync candidates:"+str(candidates))
+        if len(candidates)==1:
+            Logger.info("  just one candidate found in local db; syncing to that event")
+            self.syncToEvent(candidates[0])
+            self.exitAdminMode()
             self.switchToBlankKeypad()
-            toast("Automatically recovering:\n"+csvCandidates[0][2]+"\nEvent started:"+str(csvCandidates[0][3]))
+            return candidates[0]
+        
+#     def recoverIfNeeded(self): # CSV-based
+#         # 1. check for files in the data dir with modification date within 24 hours
+#         # 2. of those, check to see which are not finalized
+#         # 3. if just one is not finalized, and it's the most recent one, load it
+#         # 4. if more than one is not finalized, show a pick box to let user
+#         #      select which one to restore
+#         # 5. if everything within the last 24 hours is finalized, do not load anything
+#         #   if a finalized version of a file exists, don't try to load any of its .bak<x>.csv files
+#         Logger.info("entering recoverIfNeeded: start time="+str(self.startTime))
+#         csvList=self.scanForCSV()
+#         Logger.info("Valid CSV files:"+str(csvList))
+#         finalized=[x[0] for x in csvList if x[4]]
+#         Logger.info("Finalized CSV files:"+str(finalized))
+# #         each sublist is [<filename>,<file_time>,<event_name>,<header_time>,<finalized>]
+#         csvCandidates1=[x for x in csvList if self.startTime-x[1]<86400 and not x[4]]
+#         csvCandidates1.sort(key=sortSecond)
+#         csvCandidates1.reverse() # most recent first, i.e. descending order
+#         # remove .bak files that have a finalized non-.bak version - could probably be refactored
+#         csvCandidates=[]
+#         for x in csvCandidates1:
+#             excludeFlag=False
+#             if re.match(".*\.bak[0-9]+\.csv$",x[0]): # it's a backup file
+#                 nonBakName=re.sub("\.bak[0-9]+","",x[0])
+#                 Logger.info("  found a backup file "+x[0]+" - looking for finalized original file "+nonBakName)
+#                 if nonBakName in finalized:
+#                     Logger.info("    found finalized original file "+nonBakName+"; excluding "+x[0]+" from candidates list")
+#                     excludeFlag=True
+#             if not excludeFlag:
+#                 csvCandidates.append(x)
+# 
+#         Logger.info("Candidates for recover:"+str(csvCandidates))
+#         if len(csvCandidates)>>0:
+#             Logger.info("Reading "+csvCandidates[0][0])
+#             self.readCSV(csvCandidates[0][0])
+#             self.switchToBlankKeypad()
+#             toast("Automatically recovering:\n"+csvCandidates[0][2]+"\nEvent started:"+str(csvCandidates[0][3]))
     
     def lookupEnter(self):
         Logger.info("lookupEnter called")
@@ -1248,6 +1313,7 @@ class signinApp(App):
 
     def showStartupSyncChoices(self,*args):
         createEventsTableIfNeeded()
+        self.initCloud()
         self.buildSyncChoicesList()
         # don't display the dialog here; display it in each callback, since UrlRequest
         #  cannot be made syncronous (wait() doesn't work)
@@ -1266,14 +1332,17 @@ class signinApp(App):
     def buildSyncChoicesList(self):
         self.syncChoicesList=[]
         # connected to cloud server? If so, check for non-finalized cloud events in current time window
-        request=UrlRequest(self.cloudServer+"/api/v1/events",
-            on_success=self.on_getCloudEvents_success,
-            on_failure=self.on_getCloudEvents_error,
-            on_error=self.on_getCloudEvents_error,
-            timeout=3,
-            method="GET",
-            debug=True)
-        
+        if self.cloud:
+            request=UrlRequest(self.cloudServer+"/api/v1/events",
+                on_success=self.on_getCloudEvents_success,
+                on_failure=self.on_getCloudEvents_error,
+                on_error=self.on_getCloudEvents_error,
+                timeout=3,
+                method="GET",
+                debug=True)
+        else:
+            self.showStartupSyncChoices_part2()
+            
     def buildSyncChoicesList_part2(self):
         Logger.info("buildSyncChoicesList_part2 called")
         # add local sync choices here
@@ -1337,28 +1406,41 @@ class signinApp(App):
         Logger.info("syncToEvent called: "+str(choice))
         # cloud's response LocalEventID becomes this session's cloudEventID
         self.cloudEventID=choice["CloudEventID"]
-        if self.cloudEventID:
-            self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
         self.localEventID=choice["LocalEventID"]
         if not self.localEventID:
             Logger.error("Synced to an event that has no localEventID")
-            
-    # this function name may change - right now it is intended to grab the entire table
-    #  from the server using http api
+            return -1
+        self.sync()
+ 
     def sync(self,clobber=False):
-        Logger.info("sync called")
+        if clobber:
+            self.signInList=[]
         if self.cloudEventID:
             request=UrlRequest(self.cloudServer+"/api/v1/events/"+str(self.cloudEventID),
-                    on_success=self.on_sync_success,
-    #                 self.on_sync_redirect,
-                    on_failure=self.on_sync_failure,
-                    on_error=self.on_sync_error)
+                    on_success=self.on_syncToCloud_success,
+                    on_failure=self.on_syncToCloud_error,
+                    on_error=self.on_syncToCloud_error)
             Logger.info("asynchronous request sent:"+str(request))
             self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
         else:
-            Logger.info("  no cloudEventID specfiied - nothing to sync")
+            self.loadFromDB(sdbGetEvent(self.localEventID))
+
+    # this function name may change - right now it is intended to grab the entire table
+    #  from the server using http api
+#     def sync(self,clobber=False):
+#         Logger.info("sync called")
+#         if self.cloudEventID:
+#             request=UrlRequest(self.cloudServer+"/api/v1/events/"+str(self.cloudEventID),
+#                     on_success=self.on_sync_success,
+#     #                 self.on_sync_redirect,
+#                     on_failure=self.on_sync_failure,
+#                     on_error=self.on_sync_error)
+#             Logger.info("asynchronous request sent:"+str(request))
+#             self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
+#         else:
+#             Logger.info("  no cloudEventID specfiied - nothing to sync")
     
-    def on_sync_success(self,request,result):
+    def on_syncToCloud_success(self,request,result):
         Logger.info("on_sync_success called")
         Logger.info(str(result))
         # fix #55: result could be html text, i.e. the login page on a guest wifi
@@ -1377,30 +1459,41 @@ class signinApp(App):
 #                     self.signInList.append(entry)
 #             self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
 #             self.updateHeaderCount()
+#         for d in result:
+#             Logger.info("  entry dict:"+str(d))
+#             entry=[d[k] for k in self.columns]
+#             Logger.info("  entry list:"+str(entry))
+#             if entry not in self.signInList: # do not add duplicates
+#                 self.signInList.append(entry)
+        self.loadFromResult(result)
+        self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+#         self.updateHeaderCount()
+
+#     def on_sync_failure(self,request,result):
+#         Logger.info("on_sync_failure called:")
+#         Logger.info("  request="+str(request))
+#         Logger.info("    request body="+str(request.req_body))
+#         Logger.info("    request headers="+str(request.req_headers))
+#         Logger.info("  result="+str(result))
+#         self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+        
+    def on_syncToCloud_error(self,request,result):
+        Logger.info("on_syncToCloud_error called:")
+        Logger.info("  request="+str(request))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+
+    def loadFromDB(self,result):
         for d in result:
             Logger.info("  entry dict:"+str(d))
             entry=[d[k] for k in self.columns]
             Logger.info("  entry list:"+str(entry))
             if entry not in self.signInList: # do not add duplicates
+                Logger.info("    adding")
                 self.signInList.append(entry)
-        self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
-        self.updateHeaderCount()
-
-    def on_sync_failure(self,request,result):
-        Logger.info("on_sync_failure called:")
-        Logger.info("  request="+str(request))
-        Logger.info("    request body="+str(request.req_body))
-        Logger.info("    request headers="+str(request.req_headers))
-        Logger.info("  result="+str(result))
-        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
-        
-    def on_sync_error(self,request,result):
-        Logger.info("on_sync_error called:")
-        Logger.info("  request="+str(request))
-        Logger.info("    request body="+str(request.req_body))
-        Logger.info("    request headers="+str(request.req_headers))
-        Logger.info("  result="+str(result))
-        self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
+            self.updateHeaderCount()
 
 #     def sync(self,clobber=False):
 #         Logger.info("sync called")
@@ -1649,7 +1742,7 @@ class signinApp(App):
     def on_request_close(self, *args, **kwargs):
         Logger.info("on_request_close called")
         if self.adminMode:
-            self.textpopup(title='Exit', text='Are you sure?', buttonText='Yes')
+            self.textpopup(title='Exit', text='Are you sure?', buttonText='Yes', size_hint=(0.5,0.2))
             return True
         else:
             return True
@@ -1669,27 +1762,22 @@ class signinApp(App):
         Logger.info("on_new_event called")
         self.sm.current='newevent'
         
-    def textpopup(self, title='', text='', buttonText='OK', on_release=None):
-        """Open the pop-up with the name.
- 
-        :param title: title of the pop-up to open
-        :type title: str
-        :param text: main text of the pop-up to open
-        :type text: str
-        :rtype: None
-        """
+    def textpopup(self, title='', text='', buttonText='OK', on_release=None, size_hint=(0.8,0.25)):
         Logger.info("textpopup called; on_release="+str(on_release))
         box = BoxLayout(orientation='vertical')
         box.add_widget(Label(text=text))
-        mybutton = Button(text=buttonText, size_hint=(1, 0.25))
-        box.add_widget(mybutton)
+        if buttonText is not None:
+            mybutton = Button(text=buttonText, size_hint=(1, 0.3))
+            box.add_widget(mybutton)
 #         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
-        popup = Popup(title=title, content=box, size_hint=(0.8,0.25))
+        popup = Popup(title=title, content=box, size_hint=size_hint)
         if not on_release:
             on_release=self.stop
-        mybutton.bind(on_release=popup.dismiss)
-        mybutton.bind(on_release=on_release)
+        if buttonText is not None:
+            mybutton.bind(on_release=popup.dismiss)
+            mybutton.bind(on_release=on_release)
         popup.open()
+        return popup # so that the calling code cand close the popup
 # 
 #     def eventStartDateTouch(self,*args,**kwargs):
 #         Logger.info("eventStartDateTouch called")
@@ -1831,7 +1919,7 @@ class ComboEdit(TextInput):
 #         self.focus=True
         
     def on_options(self, instance, value):
-        Logger.info("on_options called:"+str(instance)+":"+str(value))
+        Logger.info("ComboEdit.on_options called:"+str(instance)+":"+str(value))
         ddn = self.drop_down
         ddn.clear_widgets()
         for option in value:
@@ -1860,13 +1948,13 @@ class ComboEdit(TextInput):
         #but it causes action buttons to fail because they depend on id at action-button-press time!
     
     def on_touch_up(self, touch):
-        Logger.info("on_touch_up called")
+        Logger.info("ComboEdit.on_touch_up called")
         if touch.grab_current == self:
             self.drop_down.open(self)
         return super(ComboEdit, self).on_touch_up(touch)
 
     def on_text(self,instance,value):
-        Logger.info("on_text called:"+str(instance)+":"+str(value))
+        Logger.info("ComboEdit.on_text called:"+str(instance)+":"+str(value))
         self.text=value
         if value!="":
             instance.options=[x for x in self.parent.parent.rosterList if x.lower().startswith(value.lower())]
