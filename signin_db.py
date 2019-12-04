@@ -130,23 +130,33 @@ def sdbHome():
 <p>API for interacting with the sign-in databases</p>'''
 
 # getSyncCandidates: return a list of non-finalized events in the current time window
-def sdbGetSyncCandidates(timeWindowDaysAgo=1):
-    now=time.time()
-    dayAgo=now-(timeWindowDaysAgo*24*60*60)
-#     candidates=q('SELECT * FROM Events ORDER BY LocalEventID WHERE Finalized != "Yes" AND EventStartEpoch BETWEEN '+str(now)+' AND '+str(dayAgo)+';')
-    query='SELECT * FROM Events WHERE "EventStartEpoch" > '+str(dayAgo)+' ORDER BY LocalEventID;'
-    print("query string: "+query)
-    candidates=q(query)
-    return candidates
+# def sdbGetSyncCandidates(timeWindowDaysAgo=1):
+#     now=time.time()
+#     dayAgo=now-(timeWindowDaysAgo*24*60*60)
+# #     candidates=q('SELECT * FROM Events ORDER BY LocalEventID WHERE Finalized != "Yes" AND EventStartEpoch BETWEEN '+str(now)+' AND '+str(dayAgo)+';')
+#     query='SELECT * FROM Events WHERE "EventStartEpoch" > '+str(dayAgo)+' ORDER BY LocalEventID;'
+#     print("query string: "+query)
+#     candidates=q(query)
+#     return candidates
 
 # def sdbGetEvent(eventID):
 #     return jsonify(q('SELECT * FROM '+str(eventID)+'_SignIn;'))
 # 
-def sdbGetEvents(since=0,nonFinalizedOnly=False):
-    print("sdbGetEvents called: since="+str(since)+" nonFinalizedOnly="+str(nonFinalizedOnly))
-#     return jsonify(q('SELECT * FROM Events;'))
+# def sdbGetEvents(since=0,nonFinalizedOnly=False):
+#     print("sdbGetEvents called: since="+str(since)+" nonFinalizedOnly="+str(nonFinalizedOnly))
+# #     return jsonify(q('SELECT * FROM Events;'))
+#     createEventsTableIfNeeded()
+#     return q('SELECT * FROM Events;')
+
+def sdbGetEvents(lastEditSince=0,eventStartSince=0,nonFinalizedOnly=False):
+    print("sdbGetEvents called: lastEditedSince="+str(lastEditSince)+"  eventStartSince="+str(eventStartSince)+"  nonFinalizedOnly="+str(nonFinalizedOnly))
     createEventsTableIfNeeded()
-    return q('SELECT * FROM Events;')
+    condition="EventStartEpoch > '{eventStartSince}' AND LastEditEpoch > '{lastEditSince}'".format(
+        eventStartSince=eventStartSince,lastEditSince=lastEditSince)
+    if nonFinalizedOnly:
+        condition+=" AND Finalized = 0"
+    return q("SELECT * FROM 'Events' WHERE {condition};".format(
+            condition=condition))
 
 def sdbGetEvent(eventID):
     tableName=str(eventID)+"_SignIn"
@@ -176,6 +186,10 @@ def sdbGetEventHTML(eventID):
     html+="</body></html>"
     return html
 
+def sdbUpdateLastEditEpoch(eventID):
+    query="UPDATE 'Events' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE LocalEventID = "+str(eventID)+";"
+    r=q(query)
+    
 # it's cleaner to let the host decide whether to add or to update;
 # if ID, Agency, Name, and InEpoch match those of an existing record,
 #  then update that record; otherwise, add a new record;
@@ -231,6 +245,7 @@ def sdbAddOrUpdate(eventID,d):
 #         app.logger.info("query string: "+query)
 #         q(query)
         qInsert(tablename,d)
+        sdbUpdateLastEditEpoch(eventID)
     elif len(r)==1: # one result found; this is a sign-out, status udpate, etc; modify existing record
         # UPDATE .. SET () = () syntax is only supported for sqlite3 3.15.0 and up;
         #  pythonanywhere only has 3.11.0, so, use simpler queries instead
@@ -248,6 +263,7 @@ def sdbAddOrUpdate(eventID,d):
         query+=" WHERE {condition};".format(condition=condition)
 #         app.logger.info("query string: "+query)
         q(query)
+        sdbUpdateLastEditEpoch(eventID)
     else:
         return jsonify({'error': 'more than one record in the host database matched the ID,Name,Agency,InEpoch values from the sign-in action'}), 405
 

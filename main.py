@@ -319,8 +319,8 @@ class signinApp(App):
         Logger.info("calling popup.dismiss")
 #         popup.dismiss()
         self.initPopup.dismiss()
-        Logger.info("calling buildSyncChoicesList")
         if not self.recoverIfNeeded():
+            Logger.info("calling buildSyncChoicesList")
             self.buildSyncChoicesList()
         Logger.info("startup complete")
 
@@ -372,7 +372,8 @@ class signinApp(App):
     
     def recoverIfNeeded(self):
         Logger.info("entering recoverIfNeeded")
-        candidates=sdbGetSyncCandidates()
+#         candidates=sdbGetSyncCandidates()
+        candidates=sdbGetEvents(lastEditSince=time.time()-1800,nonFinalizedOnly=True)
         Logger.info("  sync candidates:"+str(candidates))
         if len(candidates)==1:
             Logger.info("  just one candidate found in local db; syncing to that event")
@@ -931,8 +932,11 @@ class signinApp(App):
 #         pass
     
     def newEventPrompt(self):
-        self.textpopup(title='New Event', text='This will delete all entries; are you sure?',on_release=self.newEvent)
-    
+        if len(self.signInList)>0:
+            self.textpopup(title='New Event', text='This will delete all entries; are you sure?',on_release=self.newEvent)
+        else:
+            self.newEvent()
+
     def newEvent(self,*args,eventType=None,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
         Logger.info("newEvent called")
 #         if not eventType:
@@ -987,20 +991,23 @@ class signinApp(App):
         #  but the api still shows that it came across as an actual dictionary
         #  rather than plain text; added a handler for this in the api
         headers = {'Content-type': 'application/json','Accept': 'text/plain'}
-        request=UrlRequest(self.cloudServer+"/api/v1/events/new",
-            on_success=self.on_newEvent_success,
-            on_failure=self.on_newEvent_failure,
-            on_error=self.on_newEvent_error,
-            req_body=j,
-            req_headers=headers,
-            method="POST",
-            debug=True)
+        if self.cloud:
+            request=UrlRequest(self.cloudServer+"/api/v1/events/new",
+                    on_success=self.on_newCloudEvent_success,
+                    on_failure=self.on_newCloudEvent_error,
+                    on_error=self.on_newCloudEvent_error,
+                    req_body=j,
+                    req_headers=headers,
+                    method="POST",
+                    debug=True)
         Logger.info("new table request sent")
         r=sdbNewEvent(d) # local db
         Logger.info("  return val from sdbNewEvent:"+str(r))
         self.localEventID=r[0]['validate']['LocalEventID']
         Logger.info("  new eventID="+str(self.localEventID))
         self.signInList=[]
+        self.switchToBlankKeypad()
+        self.sync()
         
     def timeStr(self,sec):
         Logger.info("calling timeStr:"+str(sec))
@@ -1285,7 +1292,7 @@ class signinApp(App):
         Logger.info("  result="+str(result))
         self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
 
-    def on_newEvent_success(self,request,result):
+    def on_newCloudEvent_success(self,request,result):
         Logger.info("on_newEvent_success called:")
 #         d=eval(request.req_body) # request body is a string; we want dict for comparison below
         v=result["validate"]
@@ -1299,15 +1306,11 @@ class signinApp(App):
 #             return -1
         Logger.info("new event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
 #         self.updateSyncLabel(" OK")
-        self.switchToBlankKeypad()
+#         self.switchToBlankKeypad()
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
-        self.sync()
-        
-    def on_newEvent_failure(self,request,result):
-        self.on_sendAction_failure(request,result)
-        self.switchToBlankKeypad()
+#         self.sync()
 
-    def on_newEvent_error(self,request,result):
+    def on_newCloudEvent_error(self,request,result):
         self.on_sendAction_error(request,result)
         self.switchToBlankKeypad()
 
@@ -1341,12 +1344,13 @@ class signinApp(App):
                 method="GET",
                 debug=True)
         else:
-            self.showStartupSyncChoices_part2()
+            self.buildSyncChoicesList_part2()
             
     def buildSyncChoicesList_part2(self):
         Logger.info("buildSyncChoicesList_part2 called")
         # add local sync choices here
-        self.syncChoicesList.extend(sdbGetSyncCandidates(timeWindowDaysAgo=10)) # get local sync choices
+#         self.syncChoicesList.extend(sdbGetSyncCandidates(timeWindowDaysAgo=10)) # get local sync choices
+        self.syncChoicesList.extend(sdbGetEvents(lastEditSince=time.time()-60*60*24*10)) # get local sync choices
         Logger.info("sync candidates:"+str(self.syncChoicesList))
         # show the dialog now
         self.showStartupSyncChoices_part2()
@@ -1486,8 +1490,9 @@ class signinApp(App):
         self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
 
     def loadFromDB(self,result):
+        Logger.info("loadFromDB called; signInList:"+str(self.signInList))
         for d in result:
-            Logger.info("  entry dict:"+str(d))
+#             Logger.info("  entry dict:"+str(d))
             entry=[d[k] for k in self.columns]
             Logger.info("  entry list:"+str(entry))
             if entry not in self.signInList: # do not add duplicates
@@ -1536,7 +1541,7 @@ class signinApp(App):
                 Logger.info("lookup table requested")
                 self.showLookup()
             else:
-                if self.typed=="": # this is the first char; do a fresh sync
+                if self.typed=="" and self.localEventID is not None: # this is the first char; do a fresh sync
                     self.sync()
                 self.typed+=text
                 self.show()
@@ -1684,7 +1689,7 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                entry=[id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0,0,cellNum,status]
+                entry=[id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0.0,0.0,cellNum,status,'']
                 self.signInList.append(entry)
                 self.sendAction(entry)
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
