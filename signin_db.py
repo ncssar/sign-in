@@ -16,15 +16,15 @@
 #-----------------------------------------------------------------------------
 #   DATE   | AUTHOR | VER |  NOTES
 #-----------------------------------------------------------------------------
+#  12-11-19   TMG     0.9   first upload to cloud
 #
 # #############################################################################
 
 import sqlite3
-import json
 import time
 
 EVENTS_COLS=[
-    # on the cloud server, LocalEventID will equal CloudEventID
+    # LocalEventID is hardcoded as the primary key
     ["CloudEventID","INTEGER"],
     ["D4HID","INTEGER"],
     ["LANIDString","TEXT"],
@@ -59,6 +59,9 @@ def dict_factory(cursor, row):
         d[col[0]] = row[idx]
     return d
 
+# each machine running this code will have its own local database file SignIn.db;
+#  they are kept separate by the fact that only one separate instance of this code
+#  is running on each machine involved (one on each server, one on each client)
 def q(query):
     print("q called: "+query)
     conn = sqlite3.connect('SignIn.db')
@@ -85,69 +88,53 @@ def qInsert(tableName,d):
         colList=colList,
         valList=valList)
     return q(query)
-    
+  
+#####################################    
+## BEGIN SDB FUNCTIONS
+#####################################
+## sdb = 'sign-in database'
+## these functions are called directly from kivy / python code running locally
+##   on client nodes, and also from API handlers running on the server(s)
+## return values from these functions do not need to be jsonified, since this
+##   code is called from other python code in one way or another; the API
+##   handlers that call this code should perform jsonification, while client
+##   nodes do not need to do any jsonification
+  
+# sdbNewEvent - create a new event
+#   d = dictionary of all required key-value pairs required to create a new event
+#   return = dictionary so that the caller can validate the added event 
 def sdbNewEvent(d):
-#     app.logger.info("new called")
-#     if not request.json:
-#         app.logger.info("no json")
-#         return "<h1>400</h1><p>Request has no json payload.</p>", 400
-#     if type(request.json) is str:
-#         d=json.loads(request.json)
-#     else: #kivy UrlRequest sends the dictionary itself
-#         d=request.json
-
-#     query="CREATE TABLE IF NOT EXISTS {id}_meta (\n"+',\n'.join(META_COLS)
-#     app.logger.info("query to add meta table:")
-#     colList="({columns})".format(
-#                 columns=', '.join(d.keys()))
-#     valList="{values}".format(
-#                 values=tuple(d.values()))  
-#     query="INSERT INTO Events {colList} VALUES {valList};".format(
-#         colList=colList,
-#         valList=valList)
     createEventsTableIfNeeded()
     d["EventStartEpoch"]=time.time()
+    # add the new event record in the Events table
     qInsert("Events",d)
-    # now get the same record(s) from the local (host) db so the downstream tool can validate
-    #  note that it should only return one record; the downstream tool should check;
+    # now get the same record db so the caller can validate
     #  also note that strictly descending order is only safe because the table uses AUTOINCREMENT
     r=q("SELECT * FROM Events ORDER BY LocalEventID DESC LIMIT 1;")
     validate=r[0]
-#     app.logger.info(str(validate))
+    # create the corresponding <LocalEventID>_SignIn table
     colString=', '.join([str(x[0])+" "+str(x[1]) for x in SIGNIN_COLS])
     query='CREATE TABLE IF NOT EXISTS "'+str(validate["LocalEventID"])+'_SignIn" ('+colString+');'
-#     app.logger.info("query to add signin table:")
-#     app.logger.info(query)
     q(query)
-    
-    # in url request context, we want to return a full flask jsonify object and a response code
-    #  but since we are not using flask here, just return a dictionary and a response code,
-    #  and any downstream tool that needs to send json will have to jsonify the dictionary
     return {'query': query,'validate': validate}, 200
+
+# sdbSetCloudEventID - pair a local event to a cloud event
+#   this function will only be called from clients, not from servers
+def sdbSetCloudEventID(localEventID,cloudEventID):
+    return q("UPDATE 'Events' SET CloudEventID = {cloudEventID} WHERE LocalEventID = {localEventID};".format(
+            cloudEventID=cloudEventID,
+            localEventID=localEventID))
     
+# sdbHome - return a welcome message to verify that this code is running
 def sdbHome():
     return '''<h1>SignIn Database API</h1>
-<p>API for interacting with the sign-in databases</p>'''
+            <p>API for interacting with the sign-in databases</p>'''
 
-# getSyncCandidates: return a list of non-finalized events in the current time window
-# def sdbGetSyncCandidates(timeWindowDaysAgo=1):
-#     now=time.time()
-#     dayAgo=now-(timeWindowDaysAgo*24*60*60)
-# #     candidates=q('SELECT * FROM Events ORDER BY LocalEventID WHERE Finalized != "Yes" AND EventStartEpoch BETWEEN '+str(now)+' AND '+str(dayAgo)+';')
-#     query='SELECT * FROM Events WHERE "EventStartEpoch" > '+str(dayAgo)+' ORDER BY LocalEventID;'
-#     print("query string: "+query)
-#     candidates=q(query)
-#     return candidates
-
-# def sdbGetEvent(eventID):
-#     return jsonify(q('SELECT * FROM '+str(eventID)+'_SignIn;'))
-# 
-# def sdbGetEvents(since=0,nonFinalizedOnly=False):
-#     print("sdbGetEvents called: since="+str(since)+" nonFinalizedOnly="+str(nonFinalizedOnly))
-# #     return jsonify(q('SELECT * FROM Events;'))
-#     createEventsTableIfNeeded()
-#     return q('SELECT * FROM Events;')
-
+# sdbGetEvents - query the Events table
+#  lastEditSince [0] - only return events whose LastEditEpoch is greater than this value
+#  eventStartSince [0] - only return events whose EventStartEpoch is greater than this value
+#  nonFinalizedOnly [False] - if True, only return events whose Finalized value is 0
+#  return - list of matching record(s)
 def sdbGetEvents(lastEditSince=0,eventStartSince=0,nonFinalizedOnly=False):
     print("sdbGetEvents called: lastEditedSince="+str(lastEditSince)+"  eventStartSince="+str(eventStartSince)+"  nonFinalizedOnly="+str(nonFinalizedOnly))
     createEventsTableIfNeeded()
@@ -160,11 +147,8 @@ def sdbGetEvents(lastEditSince=0,eventStartSince=0,nonFinalizedOnly=False):
 
 def sdbGetEvent(eventID):
     tableName=str(eventID)+"_SignIn"
-    all=q('SELECT * FROM "'+tableName+'";')
+    all=q("SELECT * FROM '"+tableName+"';")
     return all
-
-# def sdbAll():
-#     return jsonify(q('SELECT * FROM SignIn;'))
 
 def sdbGetEventHTML(eventID):
     tableName=str(eventID)+"_SignIn"
@@ -194,7 +178,7 @@ def sdbUpdateLastEditEpoch(eventID):
 # if ID, Agency, Name, and InEpoch match those of an existing record,
 #  then update that record; otherwise, add a new record;
 # PUT seems like a better fit than POST based on the HTTP docs
-#  note: only store inEpoch to the nearest hunredth of a second since
+#  note: only store inEpoch to the nearest hundredth of a second since
 #  comparison beyond 5-digits-right-of-decimal has shown truncation differences
 
 def sdbAddOrUpdate(eventID,d):
@@ -265,7 +249,7 @@ def sdbAddOrUpdate(eventID,d):
         q(query)
         sdbUpdateLastEditEpoch(eventID)
     else:
-        return jsonify({'error': 'more than one record in the host database matched the ID,Name,Agency,InEpoch values from the sign-in action'}), 405
+        return {'error': 'more than one record in the host database matched the ID,Name,Agency,InEpoch values from the sign-in action'}, 405
 
     # now get the same record(s) from the local (host) db so the downstream tool can validate
     #  note that it should only return one record; the downstream tool should check

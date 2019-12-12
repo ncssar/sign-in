@@ -976,6 +976,8 @@ class signinApp(App):
         
 #         Logger.info("sendAction called")
 #         d=dict(zip(self.columns,entry))
+
+        self.signInList=[]
         d={
             "EventType":eventType,
             "EventName":eventName,
@@ -987,10 +989,19 @@ class signinApp(App):
         j=json.dumps(d)
         Logger.info("dict:"+str(d))
         Logger.info("json:"+str(j))
+        
+        # create the new local event
+        r=sdbNewEvent(d)
+        Logger.info("  return val from sdbNewEvent:"+str(r))
+        self.localEventID=r[0]['validate']['LocalEventID']
+        Logger.info("  new localEventID="+str(self.localEventID))
+        
+        # create the new cloud event
         # UrlRequest sends body as plain text by default; need to send json header
         #  but the api still shows that it came across as an actual dictionary
         #  rather than plain text; added a handler for this in the api
         headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+        self.cloudEventID=None # make sure we don't accidentally sync to a different cloud event
         if self.cloud:
             request=UrlRequest(self.cloudServer+"/api/v1/events/new",
                     on_success=self.on_newCloudEvent_success,
@@ -1000,14 +1011,11 @@ class signinApp(App):
                     req_headers=headers,
                     method="POST",
                     debug=True)
-        Logger.info("new table request sent")
-        r=sdbNewEvent(d) # local db
-        Logger.info("  return val from sdbNewEvent:"+str(r))
-        self.localEventID=r[0]['validate']['LocalEventID']
-        Logger.info("  new eventID="+str(self.localEventID))
-        self.signInList=[]
+            Logger.info("new cloud event request sent") # sync during the callback
+        else:
+            Logger.info("no cloud contact; new cloud event request not sent")
+            sync()
         self.switchToBlankKeypad()
-        self.sync()
         
     def timeStr(self,sec):
         Logger.info("calling timeStr:"+str(sec))
@@ -1268,8 +1276,8 @@ class signinApp(App):
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
         
         # now set the 'Synced' column on the local db to indicate successful sync
-        d["Sycned"]=self.cloudEventID
-        sdbAddOrUpdate(self.cloudEventID,d)
+        d["Synced"]=self.cloudEventID
+        sdbAddOrUpdate(self.localEventID,d)
         
         # do a new sync in case anything changed on the server from other nodes
         self.sync()
@@ -1293,10 +1301,11 @@ class signinApp(App):
         self.topbar.ids.syncButtonImage.source=self.syncNoneIconFileName
 
     def on_newCloudEvent_success(self,request,result):
-        Logger.info("on_newEvent_success called:")
+        Logger.info("on_newCloudEvent_success called:")
 #         d=eval(request.req_body) # request body is a string; we want dict for comparison below
         v=result["validate"]
-        self.cloudEventID=v["CloudEventID"]
+        self.cloudEventID=v["LocalEventID"]
+        # since this request will respond after the local event is already made, 
 #         self.signInTableName=str(self.eventID)+"_SignIn"
 #         if len(v) != 1:
 #             Logger.info("response error: PUT response json 'validate' entry should contain exactly one record but it contains "+str(len(v))+":\n"+str(rj["validate"]))
@@ -1304,11 +1313,12 @@ class signinApp(App):
 #         if d != v[0]:
 #             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
 #             return -1
-        Logger.info("new event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
+        Logger.info("new cloud event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
+        sdbSetCloudEventID(self.localEventID,self.cloudEventID)
 #         self.updateSyncLabel(" OK")
 #         self.switchToBlankKeypad()
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
-#         self.sync()
+        self.sync()
 
     def on_newCloudEvent_error(self,request,result):
         self.on_sendAction_error(request,result)
@@ -1322,6 +1332,12 @@ class signinApp(App):
         #  cannot be made syncronous (wait() doesn't work)
         
     def showStartupSyncChoices_part2(self):
+        # this function will be called from one of two places:
+        #  1. after a successful cloud event query (from on_getCloudEvents_success)
+        #    OR
+        #  2. from buildSyncChoicesList, if the cloud is not connected
+        #  either way, syncChoicesList should be completely built and uniquified
+        #   before this function is called
         if len(self.syncChoicesList)==0:
             self.textpopup(
                     title='No sync choices',
@@ -1333,8 +1349,10 @@ class signinApp(App):
     # must jump through these hoops to call the parts in sequence, since UrlRequest
     #  cannot be made syncronous (the wait() function hangs for error or failure)                    
     def buildSyncChoicesList(self):
-        self.syncChoicesList=[]
-        # connected to cloud server? If so, check for non-finalized cloud events in current time window
+        # first, add all recent events from the local database
+        self.syncChoicesList=sdbGetEvents(lastEditSince=time.time()-60*60*24*10) # edited in the last 10 days
+        # next, check for cloud events:
+        #  connected to cloud server? If so, check for non-finalized cloud events in current time window
         if self.cloud:
             request=UrlRequest(self.cloudServer+"/api/v1/events",
                 on_success=self.on_getCloudEvents_success,
@@ -1344,16 +1362,36 @@ class signinApp(App):
                 method="GET",
                 debug=True)
         else:
-            self.buildSyncChoicesList_part2()
+            self.showStartupSyncChoicesList_part2()
             
-    def buildSyncChoicesList_part2(self):
-        Logger.info("buildSyncChoicesList_part2 called")
-        # add local sync choices here
-#         self.syncChoicesList.extend(sdbGetSyncCandidates(timeWindowDaysAgo=10)) # get local sync choices
-        self.syncChoicesList.extend(sdbGetEvents(lastEditSince=time.time()-60*60*24*10)) # get local sync choices
-        Logger.info("sync candidates:"+str(self.syncChoicesList))
-        # show the dialog now
-        self.showStartupSyncChoices_part2()
+#     def buildSyncChoicesList_part2(self):
+#         # this function will be called from one of two places:
+#         #  1. after a successful cloud event query (from on_getCloudEvents_success)
+#         #    OR
+#         #  2. from buildSyncChoicesList, if the cloud is not connected
+#         Logger.info("buildSyncChoicesList_part2 called")
+#         # add local sync choices here
+# #         self.syncChoicesList.extend(sdbGetSyncCandidates(timeWindowDaysAgo=10)) # get local sync choices
+#         # get local sync choices
+# #         localSyncChoices=sdbGetEvents(lastEditSince=time.time()-60*60*24*10)
+# #         localChoicesToAddToSyncChoices=[]
+#         for localChoice in localSyncChoices:
+#             Logger.info("  checking localChoice "+str(localChoice))
+#             for remoteChoice in self.syncChoicesList:
+#                 Logger.info("    checking remoteChoice "+str(remoteChoice))
+#                 same=set(localChoice.items()).intersection(set(remoteChoice.items()))
+#                 sameKeys=[x[0] for x in same]
+#                 Logger.info("sameKeys:"+str(sameKeys))
+#                 if 'CloudEventID' not in sameKeys:
+#                     Logger.info("      this local event has no cloud counterpart; will add it")
+#                     localChoicesToAddToSyncChoices.append(localChoice)
+#         self.syncChoicesList.extend(localChoicesToAddToSyncChoices)
+#         # uniquify: if multiple choices have the start date, start time, name, and location,
+#         #  and one of them has a cloudEventID but the other does not, get rid of the one that
+#         #  does not have a cloudEventID
+#         Logger.info("sync candidates:"+str(self.syncChoicesList))
+#         # show the dialog now
+#         self.showStartupSyncChoices_part2()
         
     def on_getCloudEvents_success(self,request,result):
         Logger.info("on_getCloudEvents_success called:")
@@ -1363,8 +1401,27 @@ class signinApp(App):
         for choice in result:
             choice["CloudEventID"]=choice["LocalEventID"]
             choice["LocalEventID"]=None
-            self.syncChoicesList.append(choice)
-        self.buildSyncChoicesList_part2()
+#             self.syncChoicesList.append(choice)
+            
+#         localSyncChoices=sdbGetEvents(lastEditSince=time.time()-60*60*24*10)
+        cloudChoicesToAddToSyncChoices=[]
+        for cloudChoice in result:
+            # default is to add the cloudChoice; test local choices to see if that remains true
+            addFlag=True
+            Logger.info("  checking cloudChoice "+str(cloudChoice))
+            for localChoice in self.syncChoicesList:
+                Logger.info("    checking localChoice "+str(localChoice))
+                same=set(localChoice.items()).intersection(set(cloudChoice.items()))
+                sameKeys=[x[0] for x in same]
+                Logger.info("sameKeys:"+str(sameKeys))
+                if 'CloudEventID' in sameKeys and 'EventStartDate' in sameKeys and 'EventStartTime' in sameKeys:
+                    Logger.info("      this cloud event is already referenced by the local event, so will not be added as a unique sync choice")
+                    addFlag=False
+            if addFlag:
+                cloudChoicesToAddToSyncChoices.append(cloudChoice)
+        self.syncChoicesList.extend(cloudChoicesToAddToSyncChoices)
+        
+        self.showStartupSyncChoices_part2()
         
     def on_getCloudEvents_failure(self,request,result):
         Logger.info("on_getCloudEvents_failure called:")
@@ -1412,11 +1469,19 @@ class signinApp(App):
         self.cloudEventID=choice["CloudEventID"]
         self.localEventID=choice["LocalEventID"]
         if not self.localEventID:
-            Logger.error("Synced to an event that has no localEventID")
-            return -1
+            # this would be the case if it is an event from cloud or LAN which
+            #  hasn't been edited on this node
+            Logger.info("Synced to an event that has no localEventID - probably the first time syncing to a cloud event")
+            Logger.info("  assigned next available localEventID "+str(self.localEventID))
+            # create the new local event
+            r=sdbNewEvent(choice)
+            Logger.info("  return val from sdbNewEvent:"+str(r))
+            self.localEventID=r[0]['validate']['LocalEventID']
+            Logger.info("  new localEventID="+str(self.localEventID))
         self.sync()
  
     def sync(self,clobber=False):
+        Logger.info("sync called; cloudEventID="+str(self.cloudEventID))
         if clobber:
             self.signInList=[]
         if self.cloudEventID:
@@ -1424,7 +1489,7 @@ class signinApp(App):
                     on_success=self.on_syncToCloud_success,
                     on_failure=self.on_syncToCloud_error,
                     on_error=self.on_syncToCloud_error)
-            Logger.info("asynchronous request sent:"+str(request))
+            Logger.info("asynchronous request sent to "+str(request.url))
             self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
         else:
             self.loadFromDB(sdbGetEvent(self.localEventID))
@@ -1469,7 +1534,7 @@ class signinApp(App):
 #             Logger.info("  entry list:"+str(entry))
 #             if entry not in self.signInList: # do not add duplicates
 #                 self.signInList.append(entry)
-        self.loadFromResult(result)
+        self.loadFromDB(result)
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
 #         self.updateHeaderCount()
 
