@@ -17,6 +17,10 @@
 #   DATE   | AUTHOR | VER |  NOTES
 #-----------------------------------------------------------------------------
 #  12-11-19   TMG     0.9   first upload to cloud
+#  12-14-19   TMG     0.91  don't try to return http-style responses with
+#                             result code; the api layer should do that; just
+#                             return dictionaries, strings, etc.; get rid of
+#                             sdbPageNotFound for the same reason
 #
 # #############################################################################
 
@@ -82,14 +86,14 @@ def qInsert(tableName,d):
     colList="({columns})".format(
                 columns=', '.join(d.keys()))
     valList="{values}".format(
-                values=tuple(d.values()))  
+                values=tuple(d.values()))
     query="INSERT INTO '{tablename}' {colList} VALUES {valList};".format(
         tablename=tableName,
         colList=colList,
         valList=valList)
     return q(query)
-  
-#####################################    
+
+#####################################
 ## BEGIN SDB FUNCTIONS
 #####################################
 ## sdb = 'sign-in database'
@@ -99,10 +103,10 @@ def qInsert(tableName,d):
 ##   code is called from other python code in one way or another; the API
 ##   handlers that call this code should perform jsonification, while client
 ##   nodes do not need to do any jsonification
-  
+
 # sdbNewEvent - create a new event
 #   d = dictionary of all required key-value pairs required to create a new event
-#   return = dictionary so that the caller can validate the added event 
+#   return = dictionary so that the caller can validate the added event
 def sdbNewEvent(d):
     createEventsTableIfNeeded()
     d["EventStartEpoch"]=time.time()
@@ -116,7 +120,7 @@ def sdbNewEvent(d):
     colString=', '.join([str(x[0])+" "+str(x[1]) for x in SIGNIN_COLS])
     query='CREATE TABLE IF NOT EXISTS "'+str(validate["LocalEventID"])+'_SignIn" ('+colString+');'
     q(query)
-    return {'query': query,'validate': validate}, 200
+    return {'query': query,'validate': validate}
 
 # sdbSetCloudEventID - pair a local event to a cloud event
 #   this function will only be called from clients, not from servers
@@ -124,7 +128,7 @@ def sdbSetCloudEventID(localEventID,cloudEventID):
     return q("UPDATE 'Events' SET CloudEventID = {cloudEventID} WHERE LocalEventID = {localEventID};".format(
             cloudEventID=cloudEventID,
             localEventID=localEventID))
-    
+
 # sdbHome - return a welcome message to verify that this code is running
 def sdbHome():
     return '''<h1>SignIn Database API</h1>
@@ -173,7 +177,7 @@ def sdbGetEventHTML(eventID):
 def sdbUpdateLastEditEpoch(eventID):
     query="UPDATE 'Events' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE LocalEventID = "+str(eventID)+";"
     r=q(query)
-    
+
 # it's cleaner to let the host decide whether to add or to update;
 # if ID, Agency, Name, and InEpoch match those of an existing record,
 #  then update that record; otherwise, add a new record;
@@ -194,7 +198,7 @@ def sdbAddOrUpdate(eventID,d):
 
 #     d['InEpoch']=round(d['InEpoch'],2)
 #     d['OutEpocj']=round(d['OutEpoch'],2)
-    
+
     # query builder from a dictionary that allows for different data types
     #  https://stackoverflow.com/a/54611514/3577105
 #     colVal="({columns}) VALUES {values}".format(
@@ -204,7 +208,7 @@ def sdbAddOrUpdate(eventID,d):
 #     colList="({columns})".format(
 #                 columns=', '.join(d.keys()))
 #     valList="{values}".format(
-#                 values=tuple(d.values()))        
+#                 values=tuple(d.values()))
     # 1. find any record(s) that should be modified
     tablename=str(eventID)+"_SignIn"
     condition="ID = '{id}' AND Name = '{name}' AND Agency = '{agency}' AND InEpoch = '{inEpoch}'".format(
@@ -256,12 +260,9 @@ def sdbAddOrUpdate(eventID,d):
     validate=q("SELECT * FROM '{tablename}' WHERE {condition};".format(
             tablename=tablename,
             condition=condition))
-    
+
     # in url request context, we want to return a full flask jsonify object and a response code
     #  but since we are not using flask here, just return a dictionary and a response code,
     #  and any downstream tool that needs to send json will have to jsonify the dictionary
 #     return jsonify({'query': query,'validate': validate}), 200
-    return {'query': query,'validate': validate}, 200
-
-def sdbPageNotFound(e):
-    return "<h1>404</h1><p>The resource could not be found.</p>", 404
+    return {'query': query,'validate': validate}

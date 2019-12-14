@@ -1,4 +1,4 @@
-# #############################################################################
+############################################################################
 #
 #  main.py - main entry point for sign-in app
 #
@@ -162,7 +162,7 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
-        self.cloudServer="http://127.0.0.1:5000"
+        self.cloudServer="http://127.0.0.1:5000" # localhost, for development
 #         self.cloudServer="http://caver456.pythonanywhere.com"
 #         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.columns=[x[0] for x in SIGNIN_COLS]
@@ -993,7 +993,7 @@ class signinApp(App):
         # create the new local event
         r=sdbNewEvent(d)
         Logger.info("  return val from sdbNewEvent:"+str(r))
-        self.localEventID=r[0]['validate']['LocalEventID']
+        self.localEventID=r['validate']['LocalEventID']
         Logger.info("  new localEventID="+str(self.localEventID))
         
         # create the new cloud event
@@ -1014,7 +1014,7 @@ class signinApp(App):
             Logger.info("new cloud event request sent") # sync during the callback
         else:
             Logger.info("no cloud contact; new cloud event request not sent")
-            sync()
+            self.sync()
         self.switchToBlankKeypad()
         
     def timeStr(self,sec):
@@ -1302,8 +1302,12 @@ class signinApp(App):
 
     def on_newCloudEvent_success(self,request,result):
         Logger.info("on_newCloudEvent_success called:")
+        Logger.info("  result="+str(result))
+        d=result
+#         d=eval(json.loads(result))
+#         d=eval(result) # result body is a string; we want dict for comparison below
 #         d=eval(request.req_body) # request body is a string; we want dict for comparison below
-        v=result["validate"]
+        v=d["validate"]
         self.cloudEventID=v["LocalEventID"]
         # since this request will respond after the local event is already made, 
 #         self.signInTableName=str(self.eventID)+"_SignIn"
@@ -1362,7 +1366,7 @@ class signinApp(App):
                 method="GET",
                 debug=True)
         else:
-            self.showStartupSyncChoicesList_part2()
+            self.showStartupSyncChoices_part2()
             
 #     def buildSyncChoicesList_part2(self):
 #         # this function will be called from one of two places:
