@@ -82,11 +82,23 @@ def createEventsTableIfNeeded():
     query='CREATE TABLE IF NOT EXISTS "Events" ('+colString+');'
     return q(query)
 
+
+# intercept any None values and change them to NULL
+def noneToNull(x):
+    if x is None:
+        return 'NULL'
+    else:
+        return x
+    
 def qInsert(tableName,d):
+    print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
     colList="({columns})".format(
                 columns=', '.join(d.keys()))
+    values=list(map(noneToNull,d.values()))
+    print("  mapped values="+str(values))
     valList="{values}".format(
-                values=tuple(d.values()))
+                values=tuple(values))
+    
     query="INSERT INTO '{tablename}' {colList} VALUES {valList};".format(
         tablename=tableName,
         colList=colList,

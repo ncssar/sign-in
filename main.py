@@ -45,10 +45,11 @@ import shutil
 import sqlite3
 import re
 import datetime
-import requests
-from requests.exceptions import Timeout
+# import requests
+# from requests.exceptions import Timeout
 import json
 from functools import partial
+import urllib.parse
 
 # database interface module shared by this app and the signin_api
 from signin_db import *
@@ -82,7 +83,7 @@ from kivy.properties import BooleanProperty, ListProperty, StringProperty, Objec
 from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
-from kivy.network.urlrequest import UrlRequest
+from kivy.network.urlrequest_tmg import UrlRequest
 
 # # from kivy.garden import datetimepicker
 # # DatePicker from https://github.com/Skucul/datepicker
@@ -162,8 +163,13 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
+        
+        self.d4hServer="https://api.d4h.org"
+        self.d4h_api_key="c04df203ed6776b0088534301612f010cafb8eed" # owner=Ash Defour
+        self.d4h_datetimeformat="%Y-%m-%dT%H:%M:%S.000Z" # used by strftime and strptime
         self.cloudServer="http://127.0.0.1:5000" # localhost, for development
 #         self.cloudServer="http://caver456.pythonanywhere.com"
+        
 #         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.columns=[x[0] for x in SIGNIN_COLS]
 #         self.realCols=["InEpoch","OutEpoch","TotalSec"] # all others are TEXT
@@ -197,6 +203,7 @@ class signinApp(App):
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
         self.syncCloudIconFileName="images/cloud_white_64x64.png"
+        self.syncD4HIconFileName="images/d4h_logo_green.png"
         self.syncCloudUploadStartIconFileName="images/cloud_upload_white_64x64.png"
         self.syncCloudUploadSuccessIconFileName="images/cloud_upload_white_64x64.png"
         self.syncCloudDownloadStartIconFileName="images/cloud_download_white_64x64.png"
@@ -312,34 +319,108 @@ class signinApp(App):
 #         popup=self.textpopup(title='Please Wait',text='Checking connections...',buttonText=None,size_hint=(0.9,0.3))
 #         popup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
         createEventsTableIfNeeded()
-        Logger.info("calling initCloud")
-        self.initCloud()
-        Logger.info("calling initLANs")
-        self.initLANs()
-        Logger.info("calling popup.dismiss")
-#         popup.dismiss()
+        self.checksComplete=0
+        # these are all asynchronous requests, so, wait until there is an answer (or timeout) from each
+        Logger.info("calling checkForCloud")
+        self.checkForCloud()
+        Logger.info("calling checkForD4H")
+        self.checkForD4H()
+        Logger.info("calling checkForLANs")
+        self.checkForLANs()
+#         tc=0
+#         while self.checksComplete<3 and tc<10:
+#             Logger.info("startup timer = "+str(tc)+"; checks complete = "+str(self.checksComplete))
+#             time.sleep(1)
+#             Clock.tick() # required! process pending kivy events, such as checking for responses!
+#             tc+=1
         self.initPopup.dismiss()
         if not self.recoverIfNeeded():
             Logger.info("calling buildSyncChoicesList")
-            self.buildSyncChoicesList()
-        Logger.info("startup complete")
+            self.buildSyncChoicesList()       
+        
+#     def startup_part2(self):
+#         Logger.info("calling initLANs")
+#         self.initLANs()
+#         Logger.info("calling popup.dismiss")
+# #         popup.dismiss()
+#         self.initPopup.dismiss()
+#         if not self.recoverIfNeeded():
+#             Logger.info("calling buildSyncChoicesList")
+#             self.buildSyncChoicesList()
+#         Logger.info("startup complete")
 
-    def initCloud(self):
+    def checkForCloud(self):
         self.cloud=False
-        try:
-            response=requests.get(self.cloudServer+"/api/v1/",timeout=(3,2))
-        except Timeout:
-            Logger.info('Cloud server did not respond in the allowed timeout period.  Proceeding without cloud connection.')
-        except ConnectionRefusedError:
-            Logger.info('Cloud server connection refused.  Proceeding without cloud connection.')
-        except:
-            Logger.info('CLoud server unhandled exception.  Proceeding without cloud connection.')
-        else:
-            Logger.info('Cloud server connection established.')
+        request=UrlRequest(self.cloudServer,
+                on_success=self.on_checkForCloud_success,
+                on_failure=self.on_checkForCloud_error,
+                on_error=self.on_checkForCloud_error,
+                timeout=3,
+                method="GET",
+                debug=True)
+#         request.wait()
+    
+    def on_checkForCloud_success(self,request,result):
+        Logger.info("on_checkForCloud_success called: response="+str(result))
+        if 'SignIn Database API' in str(result):
+            Logger.info("  valid response detected; cloud connection established.")
             self.cloud=True
+#         self.checksComplete+=1
+#         self.startup_part2()
+    
+    def on_checkForCloud_error(self,request,result):
+        Logger.info("on_checkForCloud_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+#         self.startup_part2()
+#         self.checksComplete+=1
+    
+    def checkForD4H(self):
+        self.d4h=False
+        request=UrlRequest(self.d4hServer+"/v2/team",
+                on_success=self.on_checkForD4H_success,
+                on_failure=self.on_checkForD4H_error,
+                on_error=self.on_checkForD4H_error,
+                req_headers={'Authorization':'Bearer '+self.d4h_api_key},
+                method="GET",
+                timeout=3,
+                debug=True)
+#         request.wait()
+    
+    def on_checkForD4H_success(self,request,result):
+        Logger.info("on_checkForD4H_success called: response="+str(result))
+        if 'Nevada County SAR' in str(result):
+            Logger.info("  valid response detected; cloud connection established.")
+            self.d4h=True
+#         self.checksComplete+=1
+#         self.startup_part2()
+    
+    def on_checkForD4H_error(self,request,result):
+        Logger.info("on_checkForD4H_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+#         self.startup_part2()
+#         self.checksComplete+=1    
+#     def initCloud(self):
+#         self.cloud=False
+#         try:
+#             response=requests.get(self.cloudServer+"/api/v1/",timeout=(3,2))
+#         except Timeout:
+#             Logger.info('Cloud server did not respond in the allowed timeout period.  Proceeding without cloud connection.')
+#         except ConnectionRefusedError:
+#             Logger.info('Cloud server connection refused.  Proceeding without cloud connection.')
+#         except:
+#             Logger.info('CLoud server unhandled exception.  Proceeding without cloud connection.')
+#         else:
+#             Logger.info('Cloud server connection established.')
+#             self.cloud=True
 
-    def initLANs(self):
-        pass
+    def checkForLANs(self):
+        self.checksComplete+=1
     
 #         request=UrlRequest(self.cloudServer+"/api/v1/",
 #             on_success=lambda *args: self.cloud=True,
@@ -1335,29 +1416,51 @@ class signinApp(App):
         # don't display the dialog here; display it in each callback, since UrlRequest
         #  cannot be made syncronous (wait() doesn't work)
         
-    def showStartupSyncChoices_part2(self):
-        # this function will be called from one of two places:
-        #  1. after a successful cloud event query (from on_getCloudEvents_success)
-        #    OR
-        #  2. from buildSyncChoicesList, if the cloud is not connected
-        #  either way, syncChoicesList should be completely built and uniquified
-        #   before this function is called
-        if len(self.syncChoicesList)==0:
-            self.textpopup(
-                    title='No sync choices',
-                    text='No sync choices were found;\nfill out the following form to create a new event:',
-                    on_release=self.showNewEvent)
-        else:
-            self.syncChoicesPopup()
+#     def showStartupSyncChoices_part2(self):
+#         # this function will be called from one of two places:
+#         #  1. after a successful cloud event query (from on_getCloudEvents_success)
+#         #    OR
+#         #  2. from buildSyncChoicesList, if the cloud is not connected
+#         #  either way, syncChoicesList should be completely built and uniquified
+#         #   before this function is called
+#         if len(self.syncChoicesList)==0:
+#             self.textpopup(
+#                     title='No sync choices',
+#                     text='No sync choices were found;\nfill out the following form to create a new event:',
+#                     on_release=self.showNewEvent)
+#         else:
+#             self.syncChoicesPopup()
 
     # must jump through these hoops to call the parts in sequence, since UrlRequest
     #  cannot be made syncronous (the wait() function hangs for error or failure)                    
     def buildSyncChoicesList(self):
         # first, add all recent events from the local database
         self.syncChoicesList=sdbGetEvents(lastEditSince=time.time()-60*60*24*10) # edited in the last 10 days
+        # next, check for d4h events
+        if self.d4h:
+            Logger.info("requesting d4h events")
+            f="%Y-%m-%dT%H:%M:%S.000Z" # time format string required for d4h api arguments
+            backDays=2
+            aheadDays=2
+            t=time.time() # current epoch seconds
+            afterObj=datetime.datetime.fromtimestamp(t-60*60*24*backDays)
+            beforeObj=datetime.datetime.fromtimestamp(t+60*60*24*aheadDays)
+            afterText=afterObj.strftime(f)
+            beforeText=beforeObj.strftime(f)
+            params={'before':beforeText,"after":afterText}
+            urlParamString=urllib.parse.urlencode(params)
+            request=UrlRequest(self.d4hServer+"/v2/team/activities?"+urlParamString,
+                on_success=self.on_getD4HEvents_success,
+                on_failure=self.on_getD4HEvents_error,
+                on_error=self.on_getD4HEvents_error,
+                timeout=3,
+                method="GET",
+                req_headers={'Authorization':'Bearer '+self.d4h_api_key},
+                debug=True)
         # next, check for cloud events:
         #  connected to cloud server? If so, check for non-finalized cloud events in current time window
         if self.cloud:
+            Logger.info("requesting cloud events")
             request=UrlRequest(self.cloudServer+"/api/v1/events",
                 on_success=self.on_getCloudEvents_success,
                 on_failure=self.on_getCloudEvents_error,
@@ -1365,8 +1468,10 @@ class signinApp(App):
                 timeout=3,
                 method="GET",
                 debug=True)
-        else:
-            self.showStartupSyncChoices_part2()
+#         else:
+# #             self.showStartupSyncChoices_part2()
+#             self.syncChoicesPopup()
+        self.syncChoicesPopup()
             
 #     def buildSyncChoicesList_part2(self):
 #         # this function will be called from one of two places:
@@ -1425,15 +1530,8 @@ class signinApp(App):
                 cloudChoicesToAddToSyncChoices.append(cloudChoice)
         self.syncChoicesList.extend(cloudChoicesToAddToSyncChoices)
         
-        self.showStartupSyncChoices_part2()
-        
-    def on_getCloudEvents_failure(self,request,result):
-        Logger.info("on_getCloudEvents_failure called:")
-        Logger.info("  request was sent to "+str(request.url))
-        Logger.info("    request body="+str(request.req_body))
-        Logger.info("    request headers="+str(request.req_headers))
-        Logger.info("  result="+str(result))
-        self.buildSyncChoicesList_part2()
+#         self.showStartupSyncChoices_part2()
+#         self.syncChoicesPopup()
 
     def on_getCloudEvents_error(self,request,result):
         Logger.info("on_getCloudEvents_error called:")
@@ -1441,26 +1539,117 @@ class signinApp(App):
         Logger.info("    request body="+str(request.req_body))
         Logger.info("    request headers="+str(request.req_headers))
         Logger.info("  result="+str(result))
-        self.buildSyncChoicesList_part2()
+#         self.showStartupSyncChoices_part2()
+#         self.syncChoicesPopup()
+
+    def on_getD4HEvents_success(self,request,result):
+        Logger.info("on_getD4HEvents_success called:")
+        Logger.info("  result="+str(result))
+        # add d4h sync choices here; response items are not in the same format
+        #  as sign-in db records, so, create a fake 'record' here with just enough
+        #  data to populate the sync choices form: EventName and EventStartEpoch
+        for activity in result["data"]:
+            self.syncChoicesList.append({
+                    "EventName":activity["ref_desc"],
+                    "EventStartEpoch":datetime.datetime.strptime(activity["date"],self.d4h_datetimeformat).timestamp(),
+                    "LocalEventID":None,
+                    "CloudEventID":None,
+                    "D4HID":activity["ref_autoid"]})
+#             self.syncChoicesList.append(choice)
+#             
+# #         localSyncChoices=sdbGetEvents(lastEditSince=time.time()-60*60*24*10)
+#         cloudChoicesToAddToSyncChoices=[]
+#         for cloudChoice in result:
+#             # default is to add the cloudChoice; test local choices to see if that remains true
+#             addFlag=True
+#             Logger.info("  checking cloudChoice "+str(cloudChoice))
+#             for localChoice in self.syncChoicesList:
+#                 Logger.info("    checking localChoice "+str(localChoice))
+#                 same=set(localChoice.items()).intersection(set(cloudChoice.items()))
+#                 sameKeys=[x[0] for x in same]
+#                 Logger.info("sameKeys:"+str(sameKeys))
+#                 if 'CloudEventID' in sameKeys and 'EventStartDate' in sameKeys and 'EventStartTime' in sameKeys:
+#                     Logger.info("      this cloud event is already referenced by the local event, so will not be added as a unique sync choice")
+#                     addFlag=False
+#             if addFlag:
+#                 cloudChoicesToAddToSyncChoices.append(cloudChoice)
+#         self.syncChoicesList.extend(cloudChoicesToAddToSyncChoices)
+
+    def on_getD4HEvents_error(self,request,result):
+        Logger.info("on_getD4HEvents_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+
+    def getStartedTimeText(self,startEpoch=0):
+        if startEpoch==0:
+            return ""
+        t=time.time()
+        if startEpoch<t:
+            prefix="Started "
+            suffix=" ago"
+        else:
+            prefix="Starts in "
+            suffix=""
+        dt=abs(t-startEpoch)
+        dtd=int(dt/(60*60*24)) # truncated total number of days
+        dth=int(dt/(60*60)) # truncated total number of hours
+        dtm=int(dt/60) # truncated total number of minutes
+        if dth==0: # within one hour
+            dtText=str(int(dt/60))+" minute"
+            if dtm!=1:
+                dtText+="s"
+        elif dth<3: # between one hour and three hours
+            dtTextH=str(dth)+" hour"
+            if dth!=1:
+                dtTextH+="s"
+            dtdm=int(dtm-(60*dth))
+            dtTextM=str(dtdm)+" minute"
+            if dtdm!=1:
+                dtTextM+="s"
+            # now put it together; omit minutes if zero
+            if dtdm!=0:
+                dtText=dtTextH+" "+dtTextM
+            else:
+                dtText=dtTextH
+        elif dth<24:
+            dtText=str(dth)+" hour"
+            if dth!=1:
+                dtText+="s"
+        else:
+            dtText=str(dtd)+" day"
+            if dtd!=1:
+                dtText+="s"
+        return prefix+dtText+suffix
         
     def syncChoicesPopup(self,choices=None):
         choices=choices or self.syncChoicesList
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
-        box.add_widget(Label(text='Join an existing event:'))
-        buttons=[]
         popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
-        for choice in choices:
-            button=ButtonWithImage()
-            button.text=choice['EventName']
-            if choice['CloudEventID']:
-                button.source=self.syncCloudIconFileName
-            else:
-                button.source=self.syncNoneIconFileName
+        if len(choices)>0:
+            box.add_widget(Label(text='Join an existing event:'))
+            buttons=[]
+#             popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
+            for choice in choices:
+                startedText=self.getStartedTimeText(choice.get("EventStartEpoch",0))
+                button=ButtonWithImage(markup=True,halign='center')
+                button.text="[size=24]"+choice['EventName']+"\n[size=12]"+startedText
+                if choice.get("CloudEventID",None):
+                    button.source=self.syncCloudIconFileName
+                elif choice.get("D4HID",None):
+                    button.source=self.syncD4HIconFileName
+                box.add_widget(button)
+                button.bind(on_release=partial(self.syncToEvent,choice))
+                button.bind(on_release=popup.dismiss)
+            box.add_widget(Label(text='Or tap below to create a new event:'))
+        else:
+            box.add_widget(Label(text='No syncable events were found.'))
+            button=Button(text='Refresh / Check Again')
             box.add_widget(button)
-            button.bind(on_release=partial(self.syncToEvent,choice))
             button.bind(on_release=popup.dismiss)
-        box.add_widget(Label(text='Or tap below to create a new event:'))
+            button.bind(on_release=self.startup)
         button=Button(text='New Event')
         box.add_widget(button)
         button.bind(on_release=popup.dismiss)
@@ -1473,15 +1662,15 @@ class signinApp(App):
         self.cloudEventID=choice["CloudEventID"]
         self.localEventID=choice["LocalEventID"]
         if not self.localEventID:
-            # this would be the case if it is an event from cloud or LAN which
-            #  hasn't been edited on this node
             Logger.info("Synced to an event that has no localEventID - probably the first time syncing to a cloud event")
-            Logger.info("  assigned next available localEventID "+str(self.localEventID))
-            # create the new local event
+            # this would be the case if it is an event from cloud or LAN which
+            #  hasn't been edited on this node; create a new local event
+            choice.pop("LocalEventID",None) # delete the LocalEventID key, if it exists, to force a new one to be assigned
             r=sdbNewEvent(choice)
-            Logger.info("  return val from sdbNewEvent:"+str(r))
-            self.localEventID=r[0]['validate']['LocalEventID']
-            Logger.info("  new localEventID="+str(self.localEventID))
+#             Logger.info("  return val from sdbNewEvent:"+str(r))
+            self.localEventID=r['validate']['LocalEventID']
+            Logger.info("  created a new local event with localEventID "+str(self.localEventID))
+
         self.sync()
  
     def sync(self,clobber=False):
@@ -1567,6 +1756,11 @@ class signinApp(App):
             if entry not in self.signInList: # do not add duplicates
                 Logger.info("    adding")
                 self.signInList.append(entry)
+#                 d=dict(zip(self.columns,entry))
+                # if we are copying the record directly from the cloud, then,
+                #  that record has been synced by definition
+                d["Synced"]=self.cloudEventID
+                sdbAddOrUpdate(self.localEventID,d) # local db
             self.updateHeaderCount()
 
 #     def sync(self,clobber=False):
