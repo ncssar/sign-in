@@ -26,7 +26,33 @@
         source: self.parent.source
         pos: self.parent.pos
         height: self.parent.height*0.75
-        
+
+<ButtonWithFourImages@Button>:
+    source1: 'images/blank_64x64.png'
+    source2: 'images/blank_64x64.png'
+    source3: 'images/blank_64x64.png'
+    source4: 'images/blank_64x64.png'
+    BoxLayout:
+        orientation: 'horizontal'
+        pos: self.parent.pos
+        height: self.parent.height
+        Image:
+            source: self.parent.parent.source1
+            pos: self.parent.pos
+            height: self.parent.height*0.75
+        Image:
+            source: self.parent.parent.source2
+            pos: self.parent.parent.pos
+            height: self.parent.height*0.75
+        Image:
+            source: self.parent.parent.source3
+            pos: self.parent.parent.pos
+            height: self.parent.height*0.75
+        Image:
+            source: self.parent.parent.source4
+            pos: self.parent.parent.pos
+            height: self.parent.height*0.75
+            
 <MyButton@Button>:
     text: 'My Key'
     font_size: min(self.height*app.defaultTextHeightMultiplier,self.parent.parent.height*0.05)
@@ -726,7 +752,7 @@
             on_release: app.readCSV()
         Button:
             text: 'Re-sync'
-            on_release: app.sync()
+            on_release: app.restart()
         Button:
             text: 'New Event'
             on_release: app.showNewEvent()

@@ -44,12 +44,13 @@ import copy
 import shutil
 import sqlite3
 import re
-import datetime
+from datetime import datetime,timezone
 # import requests
 # from requests.exceptions import Timeout
 import json
 from functools import partial
 import urllib.parse
+# import certifi # attempt to fix SSL shared-token problem on Android
 
 # database interface module shared by this app and the signin_api
 from signin_db import *
@@ -83,7 +84,9 @@ from kivy.properties import BooleanProperty, ListProperty, StringProperty, Objec
 from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
-from kivy.network.urlrequest_tmg import UrlRequest
+
+# custom version of kivy/network/urlrequest.py to allow synchronous (blocking) requests
+from urlrequest_tmg import UrlRequest
 
 # # from kivy.garden import datetimepicker
 # # DatePicker from https://github.com/Skucul/datepicker
@@ -118,6 +121,9 @@ if platform in ('android'):
 
 def sortSecond(val):
     return val[1]
+
+def utc_to_local(utc_dt,tz=None):
+    return utc_dt.replace(tzinfo=timezone.utc).astimezone(tz=tz)
 
 def toast(text):
     if platform in ('android'):
@@ -163,12 +169,16 @@ class signinApp(App):
         self.gui=Builder.load_file('main.kv')
         self.adminCode='925'
         self.adminMode=False
+        self.signin_dateformat="%a %b %d %Y"
+        self.signin_timeformat="%H:%M"
+        self.signin_datetimeformat=self.signin_dateformat+" "+self.signin_timeformat
         
         self.d4hServer="https://api.d4h.org"
         self.d4h_api_key="c04df203ed6776b0088534301612f010cafb8eed" # owner=Ash Defour
         self.d4h_datetimeformat="%Y-%m-%dT%H:%M:%S.000Z" # used by strftime and strptime
+        self.d4h_timezone_name="America/Los_Angeles" # updated during checkForD4H
         self.cloudServer="http://127.0.0.1:5000" # localhost, for development
-#         self.cloudServer="http://caver456.pythonanywhere.com"
+        self.cloudServer="http://caver456.pythonanywhere.com"
         
 #         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.columns=[x[0] for x in SIGNIN_COLS]
@@ -203,6 +213,7 @@ class signinApp(App):
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
         self.syncCloudIconFileName="images/cloud_white_64x64.png"
+        self.syncLocalIconFileName="images/local_icon.png"
         self.syncD4HIconFileName="images/d4h_logo_green.png"
         self.syncCloudUploadStartIconFileName="images/cloud_upload_white_64x64.png"
         self.syncCloudUploadSuccessIconFileName="images/cloud_upload_white_64x64.png"
@@ -275,9 +286,9 @@ class signinApp(App):
         
         return self.container
 
-    def q(self,query):
-#         Logger.info("** EXECUTING QUERY: "+str(query))
-        self.cur.execute(query)
+#     def q(self,query):
+# #         Logger.info("** EXECUTING QUERY: "+str(query))
+#         self.cur.execute(query)
         
 #     def initSql(self):
 #         self.con=sqlite3.connect('SignIn.db')
@@ -312,7 +323,11 @@ class signinApp(App):
 # #                 "CellNum TEXT,"
 # #                 "Status TEXT)")
 
-    def startup(self,*args):
+    # restart: called from GUI; disallow auto-recover - show all choices
+    def restart(self):
+        self.startup(allowRecoverIfNeeded=False)
+        
+    def startup(self,*args,allowRecoverIfNeeded=True):
         # perform startup tasks here that should take place after the GUI is alive:
         # - check for connections (cloud and LAN(s))
         Logger.info("startup called")
@@ -334,10 +349,14 @@ class signinApp(App):
 #             Clock.tick() # required! process pending kivy events, such as checking for responses!
 #             tc+=1
         self.initPopup.dismiss()
-        if not self.recoverIfNeeded():
+        if allowRecoverIfNeeded:
+            if not self.recoverIfNeeded():
+                Logger.info("calling buildSyncChoicesList")
+                self.buildSyncChoicesList()       
+        else:
             Logger.info("calling buildSyncChoicesList")
-            self.buildSyncChoicesList()       
-        
+            self.buildSyncChoicesList()
+            
 #     def startup_part2(self):
 #         Logger.info("calling initLANs")
 #         self.initLANs()
@@ -355,7 +374,7 @@ class signinApp(App):
                 on_success=self.on_checkForCloud_success,
                 on_failure=self.on_checkForCloud_error,
                 on_error=self.on_checkForCloud_error,
-                timeout=3,
+                timeout=5,
                 method="GET",
                 debug=True)
 #         request.wait()
@@ -385,15 +404,18 @@ class signinApp(App):
                 on_error=self.on_checkForD4H_error,
                 req_headers={'Authorization':'Bearer '+self.d4h_api_key},
                 method="GET",
-                timeout=3,
+                timeout=5,
                 debug=True)
+#                 ca_file="certs.pem") # attempt to fix SSL shared-token problem on Android
 #         request.wait()
     
     def on_checkForD4H_success(self,request,result):
         Logger.info("on_checkForD4H_success called: response="+str(result))
         if 'Nevada County SAR' in str(result):
-            Logger.info("  valid response detected; cloud connection established.")
+            Logger.info("  valid response detected; D4H connection established.")
             self.d4h=True
+            # get the team account timezone offset
+            self.d4h_timezone_offset=result["data"]["timezone"]["offset"]
 #         self.checksComplete+=1
 #         self.startup_part2()
     
@@ -1018,8 +1040,30 @@ class signinApp(App):
         else:
             self.newEvent()
 
-    def newEvent(self,*args,eventType=None,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
+#     def newEvent(self,*args,eventType=None,eventName=None,eventLocation=None,eventStartDate=None,eventStartTime=None):
+# newEvent: d is a dictionary in the same format as a record in the Events table
+# if called with no dictionary, it is probably being called from the Create New Event
+#  button in the newevent page of the GUI, so, use the values from that form if they exist
+#  and try to create both local and cloud events by default in that case
+    def newEvent(self,*args,d=None,createLocal=True,createCloud=True):
         Logger.info("newEvent called")
+        t=time.time()
+        if not d: # no dictionary specified - use GUI values
+            eventType=self.newevent.eventType or "Not Specified"
+            eventName=self.newevent.eventName or "Not Specified"
+            eventLocation=self.newevent.eventLocation or "Not Specified"
+            eventStartDate=self.newevent.eventStartDate or today_date()
+            eventStartTime=self.newevent.eventStartTime or datetime.datetime.fromtimestamp(t).strftime("%H:%M")
+            eventStartEpoch=datetime.datetime.strptime(eventStartDate+" "+eventStartTime,self.signin_datetimeformat).timestamp()
+            d={
+                "EventType":eventType,
+                "EventName":eventName,
+                "EventLocation":eventLocation,
+                "EventStartDate":eventStartDate,
+                "EventStartTime":eventStartTime,
+                "EventStartEpoch":eventStartEpoch,
+                "Finalized":0,
+                "LastEditEpoch":t}
 #         if not eventType:
 #             eventType=""
 #         if not eventStartDate:
@@ -1034,68 +1078,90 @@ class signinApp(App):
 #         self.details.eventLocation=eventLocation
 #         self.details.eventStartDate=eventStartDate
 #         self.details.eventStartTime=eventStartTime
-        if eventType:
-            self.newevent.eventType=eventType
-        else:
-            eventType=self.newevent.eventType or "Not Specified"
-        if eventName:
-            self.newevent.eventName=eventName
-        else:
-            eventName=self.newevent.eventName or "Not Specified"
-        if eventStartDate:
-            self.newevent.eventStartDate=eventStartDate
-        else:
-            eventStartDate=self.newevent.eventStartDate or today_date()
-        if eventStartTime:
-            self.newevent.eventStartTime=eventStartTime
-        else:
-            eventStartTime=self.newevent.eventStartTime or datetime.datetime.now().strftime("%H:%M")
-        if eventLocation:
-            self.newevent.eventLocation=eventLocation
-        else:
-            eventLocation=self.newevent.eventLocation or "Not Specified"
+
+#         if eventType:
+#             self.newevent.eventType=eventType
+#         else:
+#             eventType=self.newevent.eventType or "Not Specified"
+#         if eventName:
+#             self.newevent.eventName=eventName
+#         else:
+#             eventName=self.newevent.eventName or "Not Specified"
+#         if eventStartDate:
+#             self.newevent.eventStartDate=eventStartDate
+#         else:
+#             eventStartDate=self.newevent.eventStartDate or today_date()
+#         if eventStartTime:
+#             self.newevent.eventStartTime=eventStartTime
+#         else:
+#             eventStartTime=self.newevent.eventStartTime or datetime.datetime.now().strftime("%H:%M")
+#         if eventLocation:
+#             self.newevent.eventLocation=eventLocation
+#         else:
+#             eventLocation=self.newevent.eventLocation or "Not Specified"
         
 #         Logger.info("sendAction called")
 #         d=dict(zip(self.columns,entry))
+        d["Finalized"]=0
+        # if LastEditEpoch already exists, preserve it; otherwise set to now
+        if not d.get("LastEditEpoch",None):
+            d["LastEditEpoch"]=t
 
-        self.signInList=[]
-        d={
-            "EventType":eventType,
-            "EventName":eventName,
-            "EventLocation":eventLocation,
-            "EventStartDate":eventStartDate,
-            "EventStartTime":eventStartTime,
-            "Finalized":0,
-            "LastEditEpoch":time.time()}
         j=json.dumps(d)
         Logger.info("dict:"+str(d))
         Logger.info("json:"+str(j))
         
-        # create the new local event
-        r=sdbNewEvent(d)
-        Logger.info("  return val from sdbNewEvent:"+str(r))
-        self.localEventID=r['validate']['LocalEventID']
-        Logger.info("  new localEventID="+str(self.localEventID))
+        self.cloudEventID=d.get("CloudEventID",None)
         
-        # create the new cloud event
-        # UrlRequest sends body as plain text by default; need to send json header
-        #  but the api still shows that it came across as an actual dictionary
-        #  rather than plain text; added a handler for this in the api
-        headers = {'Content-type': 'application/json','Accept': 'text/plain'}
-        self.cloudEventID=None # make sure we don't accidentally sync to a different cloud event
-        if self.cloud:
-            request=UrlRequest(self.cloudServer+"/api/v1/events/new",
-                    on_success=self.on_newCloudEvent_success,
-                    on_failure=self.on_newCloudEvent_error,
-                    on_error=self.on_newCloudEvent_error,
-                    req_body=j,
-                    req_headers=headers,
-                    method="POST",
-                    debug=True)
-            Logger.info("new cloud event request sent") # sync during the callback
-        else:
-            Logger.info("no cloud contact; new cloud event request not sent")
-            self.sync()
+#         self.cloudEventID=None # if creating both cloud and local, this is obvious;
+         # if creating local only, we still don't want to use the previous cloudEventID;
+         #  that scenario is instead handled by syncing to an existing cloud event in
+         #  which case ...?
+         
+        if createCloud:
+            # create the new cloud event first, so the ID can be used for the local and/or LAN events
+            # UrlRequest sends body as plain text by default; need to send json header
+            #  but the api still shows that it came across as an actual dictionary
+            #  rather than plain text; added a handler for this in the api
+            headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+            self.cloudEventID=None # make sure we don't accidentally sync to a different cloud event
+            self.checkForCloud() # check for cloud right now
+            if self.cloud:
+                request=UrlRequest(self.cloudServer+"/api/v1/events/new",
+                        on_success=self.on_newCloudEvent_success,
+                        on_failure=self.on_newCloudEvent_error,
+                        on_error=self.on_newCloudEvent_error,
+                        req_body=j,
+                        req_headers=headers,
+                        method="POST",
+                        timeout=3,
+                        debug=True)
+                # since the request was synchronous, self.cloudEventID should exist by now
+                if self.cloudEventID:
+                    d["cloudEventID"]=self.cloudEventID # use it in local and/or LAN events
+            else:
+                Logger.info("no cloud contact; new cloud event request not sent")
+                
+        if createLocal:
+            self.signInList=[] # delete all current sign-in records
+#             d={
+#                 "EventType":eventType,
+#                 "EventName":eventName,
+#                 "EventLocation":eventLocation,
+#                 "EventStartDate":eventStartDate,
+#                 "EventStartTime":eventStartTime,
+#                 "Finalized":0,
+#                 "LastEditEpoch":time.time()}
+            
+            # create the new local event
+            r=sdbNewEvent(d)
+            Logger.info("  return val from sdbNewEvent:"+str(r))
+            self.localEventID=r['validate']['LocalEventID']
+            if self.cloudEventID:
+                sdbSetCloudEventID(self.localEventID,self.cloudEventID)
+            Logger.info("  new localEventID="+str(self.localEventID))
+
+        self.sync()
         self.switchToBlankKeypad()
         
     def timeStr(self,sec):
@@ -1170,6 +1236,10 @@ class signinApp(App):
         self.sm.transition.direction='down'
 
     def showNewEvent(self,*args):
+        self.newevent.ids.eventNameField=''
+        self.newevent.ids.eventLocationField=''
+        self.newevent.ids.eventStartDate=today_date()
+        self.newevent.ids.eventStartTime=datetime.datetime.now().strftime("%H:%M")
         self.sm.current='newevent'
         
     def showDetails(self,*args):
@@ -1399,7 +1469,8 @@ class signinApp(App):
 #             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
 #             return -1
         Logger.info("new cloud event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
-        sdbSetCloudEventID(self.localEventID,self.cloudEventID)
+        if self.localEventID: # localEventID will not exist yet if cloud event is being made first from newEvent
+            sdbSetCloudEventID(self.localEventID,self.cloudEventID)
 #         self.updateSyncLabel(" OK")
 #         self.switchToBlankKeypad()
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
@@ -1439,14 +1510,13 @@ class signinApp(App):
         # next, check for d4h events
         if self.d4h:
             Logger.info("requesting d4h events")
-            f="%Y-%m-%dT%H:%M:%S.000Z" # time format string required for d4h api arguments
             backDays=2
             aheadDays=2
             t=time.time() # current epoch seconds
             afterObj=datetime.datetime.fromtimestamp(t-60*60*24*backDays)
             beforeObj=datetime.datetime.fromtimestamp(t+60*60*24*aheadDays)
-            afterText=afterObj.strftime(f)
-            beforeText=beforeObj.strftime(f)
+            afterText=afterObj.strftime(self.d4h_datetimeformat)
+            beforeText=beforeObj.strftime(self.d4h_datetimeformat)
             params={'before':beforeText,"after":afterText}
             urlParamString=urllib.parse.urlencode(params)
             request=UrlRequest(self.d4hServer+"/v2/team/activities?"+urlParamString,
@@ -1541,20 +1611,33 @@ class signinApp(App):
         Logger.info("  result="+str(result))
 #         self.showStartupSyncChoices_part2()
 #         self.syncChoicesPopup()
-
+        
     def on_getD4HEvents_success(self,request,result):
         Logger.info("on_getD4HEvents_success called:")
         Logger.info("  result="+str(result))
         # add d4h sync choices here; response items are not in the same format
         #  as sign-in db records, so, create a fake 'record' here with just enough
         #  data to populate the sync choices form: EventName and EventStartEpoch
+        # NOTE that d4h activity date/time stamps are GMT - need to adjust for timezone;
+        #  offset should be taken from the D4H team information; easier to add the offset
+        #  than to import the pytz module
+        # d4h support confirms that API v2 has no call to get the location bookmark details
+        #  but such a call may exist in v3
         for activity in result["data"]:
+            d4hdate_text=activity["date"]
+            d4hdate_naive=datetime.datetime.strptime(activity["date"],self.d4h_datetimeformat)
+# #             d4hdate_aware=pytz.timezone(self.d4h_timezone_name).localize(d4hdate_naive)
+#             d4hdate_aware_utc=pytz.utc.localize(d4hdate_naive)
+#             d4hdate_aware_local=d4hdate_aware_utc.astimezone(pytz.timezone(self.d4h_timezone_name))
+            d4hdate_aware_local=utc_to_local(d4hdate_naive)
             self.syncChoicesList.append({
                     "EventName":activity["ref_desc"],
-                    "EventStartEpoch":datetime.datetime.strptime(activity["date"],self.d4h_datetimeformat).timestamp(),
+                    "EventStartEpoch":d4hdate_aware_local.timestamp(),
+                    "EventStartDate":d4hdate_aware_local.strftime(self.signin_dateformat),
+                    "EventStartTime":d4hdate_aware_local.strftime(self.signin_timeformat),
                     "LocalEventID":None,
                     "CloudEventID":None,
-                    "D4HID":activity["ref_autoid"]})
+                    "D4HID":activity["id"]}) # D4H ref_autoid value is a string and is not guaranteed to be unique
 #             self.syncChoicesList.append(choice)
 #             
 # #         localSyncChoices=sdbGetEvents(lastEditSince=time.time()-60*60*24*10)
@@ -1634,12 +1717,14 @@ class signinApp(App):
 #             popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
             for choice in choices:
                 startedText=self.getStartedTimeText(choice.get("EventStartEpoch",0))
-                button=ButtonWithImage(markup=True,halign='center')
+                button=ButtonWithFourImages(markup=True,halign='center')
                 button.text="[size=24]"+choice['EventName']+"\n[size=12]"+startedText
+                if choice.get("D4HID",None):
+                    button.source1=self.syncD4HIconFileName
+                if choice.get("LocalEventID",None):
+                    button.source2=self.syncLocalIconFileName
                 if choice.get("CloudEventID",None):
-                    button.source=self.syncCloudIconFileName
-                elif choice.get("D4HID",None):
-                    button.source=self.syncD4HIconFileName
+                    button.source3=self.syncCloudIconFileName
                 box.add_widget(button)
                 button.bind(on_release=partial(self.syncToEvent,choice))
                 button.bind(on_release=popup.dismiss)
@@ -1659,16 +1744,25 @@ class signinApp(App):
     def syncToEvent(self,choice,*args):
         Logger.info("syncToEvent called: "+str(choice))
         # cloud's response LocalEventID becomes this session's cloudEventID
-        self.cloudEventID=choice["CloudEventID"]
-        self.localEventID=choice["LocalEventID"]
+        self.d4hEventID=choice.get("D4HID",None)
+        self.cloudEventID=choice.get("CloudEventID",None)
+        self.localEventID=choice.get("LocalEventID",None)
+        if self.d4hEventID and not self.cloudEventID and not self.localEventID:
+            Logger.info("Synced to a D4H event that has no local or cloud event ID")
+            if self.cloud:
+                Logger.info("  Cloud is responding; sending the request to make the cloud event")
+                r=self.newEvent(d=choice,createLocal=True,createCloud=True)
+            else:
+                Logger.info("   Cloud is not responding; could not create the cloud event")
         if not self.localEventID:
             Logger.info("Synced to an event that has no localEventID - probably the first time syncing to a cloud event")
             # this would be the case if it is an event from cloud or LAN which
             #  hasn't been edited on this node; create a new local event
             choice.pop("LocalEventID",None) # delete the LocalEventID key, if it exists, to force a new one to be assigned
-            r=sdbNewEvent(choice)
-#             Logger.info("  return val from sdbNewEvent:"+str(r))
-            self.localEventID=r['validate']['LocalEventID']
+#             r=sdbNewEvent(choice)
+            r=self.newEvent(d=choice,createLocal=True,createCloud=False)
+#             Logger.info("  return val from newEvent:"+str(r))
+#             self.localEventID=r['validate']['LocalEventID']
             Logger.info("  created a new local event with localEventID "+str(self.localEventID))
 
         self.sync()
@@ -2058,7 +2152,10 @@ class SelectableRecycleGridLayout(LayoutSelectionBehavior,
                                   RecycleGridLayout):
     ''' Adds selection and focus behaviour to the view. '''
 
-class ButtonWithImage(Button):
+# class ButtonWithImage(Button):
+#     pass
+
+class ButtonWithFourImages(Button):
     pass
 
 class SelectableLabel(RecycleDataViewBehavior, Label):

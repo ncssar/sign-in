@@ -56,7 +56,7 @@ SIGNIN_COLS=[
     ["Status","TEXT"],
     ["Synced","INTEGER"]]
 
-
+# needed to make query return values dictionaries instead of lists of tuples
 def dict_factory(cursor, row):
     d = {}
     for idx, col in enumerate(cursor.description):
@@ -66,12 +66,16 @@ def dict_factory(cursor, row):
 # each machine running this code will have its own local database file SignIn.db;
 #  they are kept separate by the fact that only one separate instance of this code
 #  is running on each machine involved (one on each server, one on each client)
-def q(query):
+def q(query,params=None):
     print("q called: "+query)
     conn = sqlite3.connect('SignIn.db')
-    conn.row_factory = dict_factory
+    conn.row_factory = dict_factory # so that return value is a dict instead of tuples
     cur = conn.cursor()
-    r=cur.execute(query).fetchall()
+    # fetchall if params is blank seems to only return a tuple, not a dict
+    if params is not None:
+        r=cur.execute(query,params).fetchall()
+    else:
+        r=cur.execute(query).fetchall()
     conn.commit()
     print("  result:" +str(r))
     return r
@@ -84,27 +88,41 @@ def createEventsTableIfNeeded():
 
 
 # intercept any None values and change them to NULL
-def noneToNull(x):
-    if x is None:
-        return 'NULL'
-    else:
-        return x
+# def noneToQuestion(x):
+#     if x is None:
+#         return 'NULL'
+#     else:
+#         return x
     
+# def qInsert(tableName,d):
+#     print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
+#     colList="({columns})".format(
+#                 columns=', '.join(d.keys()))
+# #     values=list(map(noneToNull,d.values()))
+#     values=list(d.values())
+#     print("  mapped values="+str(values))
+#     valList="{values}".format(
+#                 values=tuple(values))
+#     
+#     query="INSERT INTO '{tablename}' {colList} VALUES {valList};".format(
+#         tablename=tableName,
+#         colList=colList,
+#         valList=valList)
+#     return q(query)
+
+# insert using db parameters to avoid SQL injection attack and to correctly handle None
 def qInsert(tableName,d):
     print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
     colList="({columns})".format(
-                columns=', '.join(d.keys()))
-    values=list(map(noneToNull,d.values()))
-    print("  mapped values="+str(values))
-    valList="{values}".format(
-                values=tuple(values))
-    
+            columns=', '.join(d.keys()))
+    valList="({columns})".format(
+            columns=", ".join([":"+str(x) for x in d.keys()]))
     query="INSERT INTO '{tablename}' {colList} VALUES {valList};".format(
-        tablename=tableName,
-        colList=colList,
-        valList=valList)
-    return q(query)
-
+            tablename=tableName,
+            colList=colList,
+            valList=valList)
+    return q(query,d)
+    
 #####################################
 ## BEGIN SDB FUNCTIONS
 #####################################
