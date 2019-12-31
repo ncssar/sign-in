@@ -50,7 +50,8 @@ from datetime import datetime,timezone
 import json
 from functools import partial
 import urllib.parse
-# import certifi # attempt to fix SSL shared-token problem on Android
+import certifi # attempt to fix SSL shared-token problem on Android
+
 
 # database interface module shared by this app and the signin_api
 from signin_db import *
@@ -109,6 +110,10 @@ if platform in ('android'):
     mActivity=PythonActivity.mActivity
     Context=autoclass('android.content.Context')
     DownloadManager=autoclass('android.app.DownloadManager')
+
+    # SSL fix https://github.com/kivy/python-for-android/issues/1827#issuecomment-500028459    
+    os.environ['SSL_CERT_FILE']=certifi.where()
+
     
 #     # SymmetricDS
 #     Logger.info("trace1")
@@ -1741,6 +1746,10 @@ class signinApp(App):
         button.bind(on_release=self.showNewEvent)
         popup.open()
     
+    # syncToEvent - set the d4h/cloud/localEventID variables based on the selected
+    #   sync target, and create corresponding cloud/local events as needed; then
+    #   call sync() to do the actual data syncing
+    
     def syncToEvent(self,choice,*args):
         Logger.info("syncToEvent called: "+str(choice))
         # cloud's response LocalEventID becomes this session's cloudEventID
@@ -1753,9 +1762,10 @@ class signinApp(App):
                 Logger.info("  Cloud is responding; sending the request to make the cloud event")
                 r=self.newEvent(d=choice,createLocal=True,createCloud=True)
             else:
-                Logger.info("   Cloud is not responding; could not create the cloud event")
+                Logger.info("   Cloud is not responding; could not create the cloud event; createing the local event")
+                # in this case, the local event will be created as below
         if not self.localEventID:
-            Logger.info("Synced to an event that has no localEventID - probably the first time syncing to a cloud event")
+            Logger.info("Synced to an event that has no localEventID - probably the first time syncing to a cloud or D4H event")
             # this would be the case if it is an event from cloud or LAN which
             #  hasn't been edited on this node; create a new local event
             choice.pop("LocalEventID",None) # delete the LocalEventID key, if it exists, to force a new one to be assigned
