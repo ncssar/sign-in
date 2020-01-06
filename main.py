@@ -329,7 +329,7 @@ class signinApp(App):
 # #                 "Status TEXT)")
 
     # restart: called from GUI; disallow auto-recover - show all choices
-    def restart(self):
+    def restart(self,*args):
         self.startup(allowRecoverIfNeeded=False)
         
     def startup(self,*args,allowRecoverIfNeeded=True):
@@ -1510,20 +1510,39 @@ class signinApp(App):
     # must jump through these hoops to call the parts in sequence, since UrlRequest
     #  cannot be made syncronous (the wait() function hangs for error or failure)                    
     def buildSyncChoicesList(self):
+        backDays=0.5
+        aheadDays=2
+        t=time.time() # current epoch seconds
+        
         # first, add all recent events from the local database
         self.syncChoicesList=sdbGetEvents(lastEditSince=time.time()-60*60*24*10) # edited in the last 10 days
+        Logger.info("sync choices after local:"+str(self.syncChoicesList))
+        
+        # next, check for cloud events:
+        #  connected to cloud server? If so, check for non-finalized cloud events in current time window
+        if self.cloud:
+            startSince=t-60*60*24*backDays
+            params={'eventStartSince':startSince}
+            urlParamString=urllib.parse.urlencode(params)
+            Logger.info("requesting cloud events with paramstring: "+urlParamString)
+            request=UrlRequest(self.cloudServer+"/api/v1/events?"+urlParamString,
+                on_success=self.on_getCloudEvents_success,
+                on_failure=self.on_getCloudEvents_error,
+                on_error=self.on_getCloudEvents_error,
+                timeout=3,
+                method="GET",
+                debug=True)
+        Logger.info("sync choices after cloud:"+str(self.syncChoicesList))
+        
         # next, check for d4h events
         if self.d4h:
-            Logger.info("requesting d4h events")
-            backDays=2
-            aheadDays=2
-            t=time.time() # current epoch seconds
             afterObj=datetime.datetime.fromtimestamp(t-60*60*24*backDays)
             beforeObj=datetime.datetime.fromtimestamp(t+60*60*24*aheadDays)
             afterText=afterObj.strftime(self.d4h_datetimeformat)
             beforeText=beforeObj.strftime(self.d4h_datetimeformat)
             params={'before':beforeText,"after":afterText}
             urlParamString=urllib.parse.urlencode(params)
+            Logger.info("requesting d4h events with paramstring: "+urlParamString)
             request=UrlRequest(self.d4hServer+"/v2/team/activities?"+urlParamString,
                 on_success=self.on_getD4HEvents_success,
                 on_failure=self.on_getD4HEvents_error,
@@ -1532,17 +1551,8 @@ class signinApp(App):
                 method="GET",
                 req_headers={'Authorization':'Bearer '+self.d4h_api_key},
                 debug=True)
-        # next, check for cloud events:
-        #  connected to cloud server? If so, check for non-finalized cloud events in current time window
-        if self.cloud:
-            Logger.info("requesting cloud events")
-            request=UrlRequest(self.cloudServer+"/api/v1/events",
-                on_success=self.on_getCloudEvents_success,
-                on_failure=self.on_getCloudEvents_error,
-                on_error=self.on_getCloudEvents_error,
-                timeout=3,
-                method="GET",
-                debug=True)
+        Logger.info("sync choices after d4h:"+str(self.syncChoicesList))
+
 #         else:
 # #             self.showStartupSyncChoices_part2()
 #             self.syncChoicesPopup()
@@ -1623,26 +1633,27 @@ class signinApp(App):
         # add d4h sync choices here; response items are not in the same format
         #  as sign-in db records, so, create a fake 'record' here with just enough
         #  data to populate the sync choices form: EventName and EventStartEpoch
-        # NOTE that d4h activity date/time stamps are GMT - need to adjust for timezone;
+        # NOTE that d4h activity date/time stamps are UTC - need to adjust for timezone;
         #  offset should be taken from the D4H team information; easier to add the offset
         #  than to import the pytz module
         # d4h support confirms that API v2 has no call to get the location bookmark details
         #  but such a call may exist in v3
         for activity in result["data"]:
-            d4hdate_text=activity["date"]
-            d4hdate_naive=datetime.datetime.strptime(activity["date"],self.d4h_datetimeformat)
-# #             d4hdate_aware=pytz.timezone(self.d4h_timezone_name).localize(d4hdate_naive)
-#             d4hdate_aware_utc=pytz.utc.localize(d4hdate_naive)
-#             d4hdate_aware_local=d4hdate_aware_utc.astimezone(pytz.timezone(self.d4h_timezone_name))
-            d4hdate_aware_local=utc_to_local(d4hdate_naive)
-            self.syncChoicesList.append({
-                    "EventName":activity["ref_desc"],
-                    "EventStartEpoch":d4hdate_aware_local.timestamp(),
-                    "EventStartDate":d4hdate_aware_local.strftime(self.signin_dateformat),
-                    "EventStartTime":d4hdate_aware_local.strftime(self.signin_timeformat),
-                    "LocalEventID":None,
-                    "CloudEventID":None,
-                    "D4HID":activity["id"]}) # D4H ref_autoid value is a string and is not guaranteed to be unique
+            if activity["id"] not in [x["D4HID"] for x in self.syncChoicesList]: # don't add duplicates
+                d4hdate_text=activity["date"]
+                d4hdate_naive=datetime.datetime.strptime(activity["date"],self.d4h_datetimeformat)
+    # #             d4hdate_aware=pytz.timezone(self.d4h_timezone_name).localize(d4hdate_naive)
+    #             d4hdate_aware_utc=pytz.utc.localize(d4hdate_naive)
+    #             d4hdate_aware_local=d4hdate_aware_utc.astimezone(pytz.timezone(self.d4h_timezone_name))
+                d4hdate_aware_local=utc_to_local(d4hdate_naive)
+                self.syncChoicesList.append({
+                        "EventName":activity["ref_desc"],
+                        "EventStartEpoch":d4hdate_aware_local.timestamp(),
+                        "EventStartDate":d4hdate_aware_local.strftime(self.signin_dateformat),
+                        "EventStartTime":d4hdate_aware_local.strftime(self.signin_timeformat),
+                        "LocalEventID":None,
+                        "CloudEventID":None,
+                        "D4HID":activity["id"]}) # D4H ref_autoid value is a string and is not guaranteed to be unique
 #             self.syncChoicesList.append(choice)
 #             
 # #         localSyncChoices=sdbGetEvents(lastEditSince=time.time()-60*60*24*10)
@@ -1715,7 +1726,7 @@ class signinApp(App):
         choices=choices or self.syncChoicesList
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
-        popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
+        popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.2+(0.1*len(choices))))
         if len(choices)>0:
             box.add_widget(Label(text='Join an existing event:'))
             buttons=[]
@@ -1736,14 +1747,18 @@ class signinApp(App):
             box.add_widget(Label(text='Or tap below to create a new event:'))
         else:
             box.add_widget(Label(text='No syncable events were found.'))
-            button=Button(text='Refresh / Check Again')
-            box.add_widget(button)
-            button.bind(on_release=popup.dismiss)
-            button.bind(on_release=self.startup)
+#             button=Button(text='Refresh / Check Again')
+#             box.add_widget(button)
+#             button.bind(on_release=popup.dismiss)
+#             button.bind(on_release=self.startup)
         button=Button(text='New Event')
         box.add_widget(button)
         button.bind(on_release=popup.dismiss)
         button.bind(on_release=self.showNewEvent)
+        button=Button(text='Refresh this list')
+        box.add_widget(button)
+        button.bind(on_release=popup.dismiss)
+        button.bind(on_release=self.restart)
         popup.open()
     
     # syncToEvent - set the d4h/cloud/localEventID variables based on the selected
@@ -1777,6 +1792,22 @@ class signinApp(App):
 
         self.sync()
  
+    # sync tasks and workflow
+    # - pushes (add or update) to self.signInList are done when 'Sign In Now' or
+    #    'Sign Out Now' are tapped, in keyDown()
+    # - pushes to local db and any remote dbs are done separately, in sendAction,
+    #    called from those same taps in keyDown() (after self.signInList is updated)
+    # - so, remaining tasks are to bring the local db and self.signInList up to date
+    #    with any entries that were added or modified by a different node, i.e.
+    #    change the local db and self.signInList as needed to make them the same as
+    #    the remote sync target
+    # - sync() should do these actions:
+    #   1 - fetch the entire database from the remote sync target (could see about
+    #         doing some cacheing as a future enhancement using 'since' which would
+    #         be different per node)
+    #   2 - for every record in the remote sync target, add or update to local db
+    #   3 - rebuild self.signInList from local db (this may involve a lot of data
+    #         but it is all local so not really a problem unless it is too slow)
     def sync(self,clobber=False):
         Logger.info("sync called; cloudEventID="+str(self.cloudEventID))
         if clobber:

@@ -139,7 +139,9 @@ def qInsert(tableName,d):
 #   return = dictionary so that the caller can validate the added event
 def sdbNewEvent(d):
     createEventsTableIfNeeded()
-    d["EventStartEpoch"]=time.time()
+    # set start time to current time if none was specified
+    if d.get("EventStartEpoch",0)==0:
+        d["EventStartEpoch"]=time.time()
     # add the new event record in the Events table
     qInsert("Events",d)
     # now get the same record db so the caller can validate
