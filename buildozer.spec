@@ -13,7 +13,7 @@ package.domain = org.test
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,csv
+source.include_exts = py,png,jpg,kv,atlas,csv,pem
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
@@ -26,6 +26,7 @@ source.exclude_dirs = old
 
 # (list) List of exclusions using pattern matching
 #source.exclude_patterns = license,images/*/*.jpg
+source.exclude_patterns = *.db
 
 # (str) Application versioning (method 1)
 # specify with __version__= in main.py instead (method 2)
@@ -42,7 +43,7 @@ version.filename = %(source.dir)s/main.py
 #  same-line comments appear in the python3 call like so:
 # Run '/usr/bin/python3 -m pythonforandroid.toolchain create --dist_name=buckshotApp --bootstrap=sdl2 --requirements=python3,kivy,pyjnius # for download-only test --arch armeabi-v7a --copy-libs --color=always --storage-dir="/mnt/c/Users/caver/Documents/GitHub/buckshotApp/.buildozer/android/platform/build"'
 ##################################################
-requirements = python3,sqlite3,kivy,pyjnius,jnius
+requirements = python3,sqlite3,kivy,certifi,openssl,pyjnius,jnius,plyer
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -91,7 +92,9 @@ fullscreen = 0
 #android.presplash_color = #FFFFFF
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,WAKE_LOCK,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,ACCESS_FINE_LOCATION
+# from Android API 28 on, ACCESS_FINE_LOCATION is needed to get SSID, even if GPS is off;
+#   otherwise WifiInfo.getSSID() returns <unknown ssid>
 
 # (int) Android API to use
 android.api = 28

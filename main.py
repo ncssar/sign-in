@@ -51,6 +51,7 @@ import json
 from functools import partial
 import urllib.parse
 import certifi # attempt to fix SSL shared-token problem on Android
+# from plyer import wifi
 
 
 # database interface module shared by this app and the signin_api
@@ -104,15 +105,23 @@ if platform in ('android'):
     
     # android pyjnius stuff, used for download and for FLAG_KEEP_SCREEN_ON
     Environment=autoclass('android.os.Environment')
+    Activity=autoclass('android.app.Activity')
     PythonActivity=autoclass('org.kivy.android.PythonActivity')
     View = autoclass('android.view.View') # to avoid JVM exception re: original thread
     Params = autoclass('android.view.WindowManager$LayoutParams')
     mActivity=PythonActivity.mActivity
     Context=autoclass('android.content.Context')
     DownloadManager=autoclass('android.app.DownloadManager')
+    ConnectivityManager=autoclass('android.net.ConnectivityManager')
+    WifiInfo=autoclass('android.net.wifi.WifiInfo')
+    con_mgr=mActivity.getSystemService(Activity.CONNECTIVITY_SERVICE)
+    wifi_mgr=mActivity.getSystemService(Activity.WIFI_SERVICE)
 
     # SSL fix https://github.com/kivy/python-for-android/issues/1827#issuecomment-500028459    
     os.environ['SSL_CERT_FILE']=certifi.where()
+    
+if platform in ('win'):
+    import subprocess
 
     
 #     # SymmetricDS
@@ -280,12 +289,10 @@ class signinApp(App):
         self.container.add_widget(self.topbar)
         self.container.add_widget(self.sm)
 
-        self.initPopup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
-
         # do the rest of the startup after GUI is launched:
         #  (this method is recommended in some posts, and is more reliable
-        #   that on_start which runs before the main loop starts, meaning
-        #   code during on_start happens with a frozed white GUI; but it also
+        #   than on_start which runs before the main loop starts, meaning
+        #   code during on_start happens with a frozen white GUI; but it also
         #   has a race condition - if you call it too soon, you get a crazy GUI)
         Clock.schedule_once(self.startup,2)
         
@@ -332,13 +339,60 @@ class signinApp(App):
     def restart(self,*args):
         self.startup(allowRecoverIfNeeded=False)
         
+    def check_connectivity(self):
+        self.ssid="None"
+        if platform=='android':
+#             activeNetwork=con_mgr.getActiveNetwork()
+#             Logger.info("Active network:"+str(activeNetwork.toString()))
+            self.ssid=wifi_mgr.getConnectionInfo().getSSID()
+            if self.ssid=="<unknown ssid>":
+                self.ssid="None" # should probably check to see if mobile data or other connection
+                # exists before telling the user that there is no connection, i.e.
+                #  wifi is just a possible means of connection
+            Logger.info("Active network:"+self.ssid)
+        elif platform=='win':
+            out=subprocess.check_output(['netsh','wlan','show','interfaces'])
+#             process=Popen(['netsh','wlan','show','interfaces'],stdout=PIPE,stderr=PIPE)
+#             stdout,stderr=process.communicate()
+#             print(str(out))
+            for line in str(out).replace('\\r','').split('\\n'):
+                if ' SSID' in line:
+                    Logger.info("SSID line found:"+line)
+                    self.ssid=line.split(': ')[1]
+            
+            
+            
+
+#         if platform != 'android':
+#             raise Exception('run me on android device')
+#     
+#         Activity = autoclass('android.app.Activity')
+#         PythonActivity = autoclass('org.renpy.android.PythonActivity')
+#         activity = PythonActivity.mActivity
+#         ConnectivityManager = autoclass('android.net.ConnectivityManager')
+#     
+#         con_mgr = activity.getSystemService(Activity.CONNECTIVITY_SERVICE)
+#     
+#         conn = con_mgr.getNetworkInfo(ConnectivityManager.TYPE_WIFI).isConnectedOrConnecting()
+#         if conn:
+#             return True
+#         else:
+#             conn = con_mgr.getNetworkInfo(ConnectivityManager.TYPE_MOBILE).isConnectedOrConnecting()
+#             if conn:
+#                 return True
+#             else:
+#                 return False
+    
     def startup(self,*args,allowRecoverIfNeeded=True):
         # perform startup tasks here that should take place after the GUI is alive:
         # - check for connections (cloud and LAN(s))
         Logger.info("startup called")
+        self.initPopup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
 #         popup=self.textpopup(title='Please Wait',text='Checking connections...',buttonText=None,size_hint=(0.9,0.3))
 #         popup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
         createEventsTableIfNeeded()
+        self.check_connectivity()
+#         self.wifi=wifi.is_enabled()
         self.checksComplete=0
         # these are all asynchronous requests, so, wait until there is an answer (or timeout) from each
         Logger.info("calling checkForCloud")
@@ -1726,7 +1780,7 @@ class signinApp(App):
         choices=choices or self.syncChoicesList
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
-        popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.2+(0.1*len(choices))))
+        popup=Popup(title='Sync Choices      [wifi='+self.ssid+']',content=box,size_hint=(0.8,0.2+(0.3*len(choices))))
         if len(choices)>0:
             box.add_widget(Label(text='Join an existing event:'))
             buttons=[]
