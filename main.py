@@ -79,6 +79,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.switch import Switch
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.image import Image
 from kivy.uix.popup import Popup
 from kivy.uix.dropdown import DropDown
 from kivy.uix.textinput import TextInput
@@ -974,6 +975,11 @@ class signinApp(App):
         self.writeCSV(download=True,rotate=False,doToastOverride=True)
         self.writePDF(download=True)
         
+        # if it's a D4H activity, and connectivity exists, export to D4H
+        if self.d4hEventID:
+            pass
+
+        
 #     def writePDFHeaderFooter(self,canvas,doc):
 #         canvas.saveState()
 #         styles = getSampleStyleSheet()
@@ -1780,9 +1786,9 @@ class signinApp(App):
         choices=choices or self.syncChoicesList
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
-        popup=Popup(title='Sync Choices      [wifi='+self.ssid+']',content=box,size_hint=(0.8,0.2+(0.3*len(choices))))
+        popup=PopupWithIcons(title='Sync Choices      [wifi='+self.ssid+']',content=box,size_hint=(0.8,min(0.9,0.2+(0.2*len(choices)))))
         if len(choices)>0:
-            box.add_widget(Label(text='Join an existing event:'))
+            box.add_widget(Label(text='Join an existing event:',height=30,size_hint_y=None))
             buttons=[]
 #             popup=Popup(title='Sync Choices',content=box,size_hint=(0.8,0.6))
             for choice in choices:
@@ -1798,22 +1804,28 @@ class signinApp(App):
                 box.add_widget(button)
                 button.bind(on_release=partial(self.syncToEvent,choice))
                 button.bind(on_release=popup.dismiss)
-            box.add_widget(Label(text='Or tap below to create a new event:'))
+            box.add_widget(Label(text='Or tap below to create a new event:',height=30,size_hint_y=None))
         else:
-            box.add_widget(Label(text='No syncable events were found.'))
+            box.add_widget(Label(text='No syncable events were found.',height=30,size_hint_y=None))
 #             button=Button(text='Refresh / Check Again')
 #             box.add_widget(button)
 #             button.bind(on_release=popup.dismiss)
 #             button.bind(on_release=self.startup)
-        button=Button(text='New Event')
+        button=Button(text='New Event',height=36,size_hint_y=None)
         box.add_widget(button)
         button.bind(on_release=popup.dismiss)
         button.bind(on_release=self.showNewEvent)
-        button=Button(text='Refresh this list')
+        button=Button(text='Refresh this list',height=36,size_hint_y=None)
         box.add_widget(button)
         button.bind(on_release=popup.dismiss)
         button.bind(on_release=self.restart)
         popup.open()
+        if self.d4h:
+            popup.ids.iconBox.add_widget(Image(source='images/d4h_logo_green.png',width=30,size_hint_x=None))
+        if self.cloud:
+            popup.ids.iconBox.add_widget(Image(source='images/cloud.png',width=30,size_hint_x=None))
+        else:
+            popup.ids.iconBox.add_widget(Image(source='images/nocloud.png',width=30,size_hint_x=None))
     
     # syncToEvent - set the d4h/cloud/localEventID variables based on the selected
     #   sync target, and create corresponding cloud/local events as needed; then
@@ -2365,6 +2377,10 @@ class DetailsScreen(Screen):
     eventStartTime=StringProperty(datetime.datetime.now().strftime("%H:%M"))
     eventLocation=StringProperty("")
     rosterFileName=StringProperty("")
+
+
+class PopupWithIcons(Popup):
+    pass
 
 
 class ComboEdit(TextInput):
