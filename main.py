@@ -124,15 +124,6 @@ if platform in ('android'):
 if platform in ('win'):
     import subprocess
 
-    
-#     # SymmetricDS
-#     Logger.info("trace1")
-#     symmetricService=autoclass('org.jumpmind.symmetric.SymmetricService')
-#     Logger.info("trace2")
-#     arg=''
-#     Logger.info("trace3")
-#     symmetricService.start(mActivity,arg)
-#     Logger.info("trace4")
 
 def sortSecond(val):
     return val[1]
@@ -189,11 +180,10 @@ class signinApp(App):
         self.signin_datetimeformat=self.signin_dateformat+" "+self.signin_timeformat
         
         self.d4hServer="https://api.d4h.org"
-        self.d4h_api_key="c04df203ed6776b0088534301612f010cafb8eed" # owner=Ash Defour
         self.d4h_datetimeformat="%Y-%m-%dT%H:%M:%S.000Z" # used by strftime and strptime
         self.d4h_timezone_name="America/Los_Angeles" # updated during checkForD4H
         self.cloudServer="http://127.0.0.1:5000" # localhost, for development
-        self.cloudServer="http://caver456.pythonanywhere.com"
+        self.cloudServer="https://caver456.pythonanywhere.com"
         
 #         self.columns=["ID","Name","Agency","Resource","TimeIn","TimeOut","Total","InEpoch","OutEpoch","TotalSec","CellNum","Status"]
         self.columns=[x[0] for x in SIGNIN_COLS]
@@ -224,6 +214,7 @@ class signinApp(App):
             self.csvDir=os.path.dirname(os.path.abspath(__file__))
 #             self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
             self.rosterDir=self.downloadDir # TO DO: implement a dir search tree
+        self.rosterFileBaseName=self.rosterDir+"/roster"
         self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
         self.printLogoFileName="images/logo.jpg"
@@ -273,7 +264,9 @@ class signinApp(App):
         self.finalized=False
         self.details.rosterFileName=self.rosterFileName
         self.startTime=round(time.time(),2) # round to hundredth of a second to aid database comparison 
-        self.readRoster()
+#         sdbGetRoster(writeFile=True) # build local json file from local roster db
+#       get and/or load the roster during startup, based on cloud connectivity
+#         self.readRoster() # no arg = read json file; specify 'csv1' to read original csv format
 #         self.setupAlphaGrouping()
         self.clocktext=self.topbar.ids.clocktext
         Clock.schedule_interval(self.clocktext.update,1)
@@ -336,6 +329,27 @@ class signinApp(App):
 # #                 "CellNum TEXT,"
 # #                 "Status TEXT)")
 
+    def getAPIKeys(self):
+        if platform in ('windows'):
+            self.signin_api_key=os.getenv('SIGNIN_API_KEY')
+            if self.signin_api_key==None:
+                self.signin_api_key="NONE"
+                Logger.info("SIGNIN API key not found.")
+                self.textpopup('SIGNIN API Key was not found.\nThis session will not have access to the SignIn cloud account.')
+            else:
+                # security: don't write the key to the log file which can be copied to a different machine
+                Logger.info("SIGNIN API key read successfully.")
+
+            self.d4h_api_key=os.getenv('D4H_API_KEY')
+            if self.d4h_api_key==None:
+                self.d4h_api_key="NONE"
+                Logger.info("D4H API key not found.")
+                self.textpopup('D4H API Key was not found.\nThis session will not have D4H access.')
+            else:
+                # security: don't write the key to the log file which can be copied to a different machine
+                Logger.info("D4H API key read successfully.")
+                
+            
     # restart: called from GUI; disallow auto-recover - show all choices
     def restart(self,*args):
         self.startup(allowRecoverIfNeeded=False)
@@ -388,6 +402,7 @@ class signinApp(App):
         # perform startup tasks here that should take place after the GUI is alive:
         # - check for connections (cloud and LAN(s))
         Logger.info("startup called")
+        self.getAPIKeys()
         self.initPopup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
 #         popup=self.textpopup(title='Please Wait',text='Checking connections...',buttonText=None,size_hint=(0.9,0.3))
 #         popup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
@@ -398,8 +413,13 @@ class signinApp(App):
         # these are all asynchronous requests, so, wait until there is an answer (or timeout) from each
         Logger.info("calling checkForCloud")
         self.checkForCloud()
-        Logger.info("calling checkForD4H")
-        self.checkForD4H()
+        self.readRoster()
+        self.d4h=False
+        if self.d4h_api_key:
+            Logger.info("calling checkForD4H")
+            self.checkForD4H()
+        else:
+            Logger.info("D4H API key not found; skipping checkForD4H")
         Logger.info("calling checkForLANs")
         self.checkForLANs()
 #         tc=0
@@ -434,6 +454,7 @@ class signinApp(App):
                 on_success=self.on_checkForCloud_success,
                 on_failure=self.on_checkForCloud_error,
                 on_error=self.on_checkForCloud_error,
+                req_headers={'Authorization':'Bearer '+self.signin_api_key},
                 timeout=5,
                 method="GET",
                 debug=True)
@@ -457,7 +478,6 @@ class signinApp(App):
 #         self.checksComplete+=1
     
     def checkForD4H(self):
-        self.d4h=False
         request=UrlRequest(self.d4hServer+"/v2/team",
                 on_success=self.on_checkForD4H_success,
                 on_failure=self.on_checkForD4H_error,
@@ -650,52 +670,128 @@ class signinApp(App):
 #         View = autoclass('android.view.View') # to avoid JVM exception re: original thread
 #         Params = autoclass('android.view.WindowManager$LayoutParams')
 #         PythonActivity.mActivity.getWindow().clearFlags(Params.FLAG_KEEP_SCREEN_ON)
-        
+
+# self.readRoster
+#  if connected to the cloud, download the latest roster and save it to the local roster
+#   file; then, regardless of connection, import the local roster file
+
 # self.roster is a dictionary: key=ID, val=[name,certifications,cell#]
 #  where 'certs' is a string of the format "K9,M,DR," etc as specified in the
 #  master roster document; relevant certifications will result in questions
 #   "are you ready to deploy as <cert>?" during sign-in
-    def readRoster(self):
+
+    def readRoster(self,format="json"):
         self.nextXID=1 # note this means the X# IDs will reset with each roster load
         # which could be a problem if a roster is loaded when people are already signed in
         self.roster={}
-        try:
-            Logger.info("reading roster file:"+self.details.rosterFileName)
-            # on android, default encoding (utf-8) resulted in failure to read roster
-            #  with the following error after opening but before the first row is read:
-            # [WARNING] 'utf-8' codec can't decode byte 0xb4 in position 736: invalid start byte
-            #  (0xb4 is a grave accent which appears in one member's name)
-            #  changing to latin-1 solved it in this case, but a better catch-all solution
-            #  is probably to use default encoding with a better 'errors' argument:
-#             with open(self.details.rosterFileName,'r',encoding='latin-1') as rosterFile:
-            with open(self.details.rosterFileName,'r',errors='ignore') as rosterFile:
-#                 self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
-                csvReader=csv.reader(rosterFile)
-                Logger.info("opened...")
-                leoPattern=re.compile("[1234][TSEPDVN][0-9]+")
-                for row in csvReader:
-                    # critera for adding a row to the roster:
-                    #  row[7] (DOE = Date Of Entry) must be non-blank (volunteers)
-                    #   OR
-                    #  row[0] must match [1234][TSEPDVN][0-9]+ (law enforcement)
-                    #  if row[0] (ID) is blank, assign a unique ID here 
-                    #   to allow the rest of this app to work.  Start with 'X1'.
-#                     Logger.info("row:"+str(row[0])+":"+row[1])
-                    # if the first token has any digits, add it to the roster
-                    if row[7] not in ("","DOE") or leoPattern.search(row[0]): # skip blanks and the header
-#                     if any(i.isdigit() for i in row[0]):
-                        if row[0]=="":
-                            row[0]="X"+str(self.nextXID)
-                            Logger.info("  no ID exists for "+row[1]+": assigning ID "+row[0])
-                            self.nextXID=self.nextXID+1
-                        self.roster[row[0]]=[row[1],row[5],row[3]]
-                        Logger.info("adding:"+str(self.roster[row[0]]))
-                self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
-        except Exception as e:
-            self.details.ids.rosterStatusLabel.text="Specified roster file is not valid."
-            self.details.ids.rosterTimeLabel.text=""
-            Logger.warning(str(e))
+        if format is 'json':
+            rosterFileName=self.rosterFileBaseName+".json"
+            if self.cloud:
+                Logger.info("Requesting roster from cloud server...")
+                request=UrlRequest(self.cloudServer+"/api/v1/roster",
+                    on_success=self.on_roster_success,
+                    on_failure=self.on_roster_error,
+                    on_error=self.on_roster_error,
+                    req_headers={'Authorization':'Bearer '+self.signin_api_key},
+                    timeout=5,
+                    method="GET",
+                    debug=True)
+            try:
+                Logger.info("reading json roster file:"+rosterFileName)
+                # on android, default encoding (utf-8) resulted in failure to read roster
+                #  with the following error after opening but before the first row is read:
+                # [WARNING] 'utf-8' codec can't decode byte 0xb4 in position 736: invalid start byte
+                #  (0xb4 is a grave accent which appears in one member's name)
+                #  changing to latin-1 solved it in this case, but a better catch-all solution
+                #  is probably to use default encoding with a better 'errors' argument:
+    #             with open(self.details.rosterFileName,'r',encoding='latin-1') as rosterFile:
+                with open(rosterFileName,'r',errors='ignore') as rosterFile:
+    #                 self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
+                    data=json.load(rosterFile)
+                    roster_date=data["roster_date"] # string
+                    rosterJson=data["roster"] # list of dictionaries
+#                     csvReader=csv.reader(rosterFile)
+                    Logger.info("opened...")
+                    for entry in rosterJson:
+                        id=entry["sar_id"]
+                        # while csv needs filtering i.e. not every row is a real roster entry,
+                        #  we should assume that every entry in rosterJson is a real roster entry
+                        # if ID is blank, assign a unique ID here 
+                        #  to allow the rest of this app to work.  Start with 'X1'.
+    #                     Logger.info("row:"+str(row[0])+":"+row[1])
+                        # if the first token has any digits, add it to the roster
+                        if id=='':
+                            id="X"+str(self.nextXID)
+                            Logger.info("  no ID exists for "+entry["name"]+": assigning ID "+id)
+                        # the cloud roster returns the resources as a list of strings.  That is the
+                        #  right way to go in the future, but just to stay compatible with existing
+                        #  code as of 2-1-20, translate it to a comma-delimited string for now:
+#                         self.roster[id]=[entry["name"],entry["rsour"],entry["cell"]]
+                        resourceString=','.join(eval(entry["rsour"]))
+                        self.roster[id]=[entry["name"],resourceString,entry["cell"]]
+                        Logger.info("adding "+str(id)+" : "+str(self.roster[id])+"  resources="+entry['rsour']+"-->"+resourceString)
+                    self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
+            except Exception as e:
+                t="Specified json roster file is not valid."
+                self.details.ids.rosterStatusLabel.text=t
+                self.details.ids.rosterTimeLabel.text=""
+                self.textpopup(t)
+                Logger.warning(str(e))
 
+        elif format is 'csv1': # csv 'version 1' before json roster was developed, i.e. before Feb. 2020
+            try:
+                Logger.info("reading csv roster file:"+self.details.rosterFileName)
+                # on android, default encoding (utf-8) resulted in failure to read roster
+                #  with the following error after opening but before the first row is read:
+                # [WARNING] 'utf-8' codec can't decode byte 0xb4 in position 736: invalid start byte
+                #  (0xb4 is a grave accent which appears in one member's name)
+                #  changing to latin-1 solved it in this case, but a better catch-all solution
+                #  is probably to use default encoding with a better 'errors' argument:
+    #             with open(self.details.rosterFileName,'r',encoding='latin-1') as rosterFile:
+                with open(self.details.rosterFileName,'r',errors='ignore') as rosterFile:
+    #                 self.details.ids.rosterTimeLabel.text=time.strftime("%a %b %#d %Y %H:%M:%S",time.localtime(os.path.getmtime(self.details.rosterFileName))) # need to use os.stat(path).st_mtime on linux
+                    csvReader=csv.reader(rosterFile)
+                    Logger.info("opened...")
+                    leoPattern=re.compile("[1234][TSEPDVN][0-9]+")
+                    for row in csvReader:
+                        # critera for adding a row to the roster:
+                        #  row[7] (DOE = Date Of Entry) must be non-blank (volunteers)
+                        #   OR
+                        #  row[0] must match [1234][TSEPDVN][0-9]+ (law enforcement)
+                        #  if row[0] (ID) is blank, assign a unique ID here 
+                        #   to allow the rest of this app to work.  Start with 'X1'.
+    #                     Logger.info("row:"+str(row[0])+":"+row[1])
+                        # if the first token has any digits, add it to the roster
+                        if row[7] not in ("","DOE") or leoPattern.search(row[0]): # skip blanks and the header
+    #                     if any(i.isdigit() for i in row[0]):
+                            if row[0]=="":
+                                row[0]="X"+str(self.nextXID)
+                                Logger.info("  no ID exists for "+row[1]+": assigning ID "+row[0])
+                                self.nextXID=self.nextXID+1
+                            self.roster[row[0]]=[row[1],row[5],row[3]]
+                            Logger.info("adding:"+str(self.roster[row[0]]))
+                    self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
+            except Exception as e:
+                self.details.ids.rosterStatusLabel.text="Specified roster file is not valid."
+                self.details.ids.rosterTimeLabel.text=""
+                Logger.warning(str(e))
+        else:
+            Logger.warning("Invalid roster format "+str(format)+" specified in call to readRoster.")
+
+    def on_roster_success(self,request,result):
+        Logger.info("on_roster_success called")
+        rosterFileName="roster.json"
+        with open(rosterFileName,'w') as outFile:
+            json.dump(result,outFile)
+            Logger.info("  roster saved to "+rosterFileName)
+    
+    def on_roster_error(self,request,result):  
+        Logger.info("on_roster_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(result))
+         
     # decide how to optimally split the roster into n roughly-evenly-sized-lists
     #  grouped on first letters of last names;
     def setupAlphaGrouping(self,numOfGroups=5):
@@ -1188,7 +1284,7 @@ class signinApp(App):
             # UrlRequest sends body as plain text by default; need to send json header
             #  but the api still shows that it came across as an actual dictionary
             #  rather than plain text; added a handler for this in the api
-            headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+            headers = {'Content-type': 'application/json','Accept': 'text/plain','Authorization':'Bearer '+self.signin_api_key}
             self.cloudEventID=None # make sure we don't accidentally sync to a different cloud event
             self.checkForCloud() # check for cloud right now
             if self.cloud:
@@ -1429,7 +1525,7 @@ class signinApp(App):
             # UrlRequest sends body as plain text by default; need to send json header
             #  but the api still shows that it came across as an actual dictionary
             #  rather than plain text; added a handler for this in the api
-            headers = {'Content-type': 'application/json','Accept': 'text/plain'}
+            headers = {'Content-type': 'application/json','Accept': 'text/plain','Authorization':'Bearer '+self.signin_api_key}
             uri=self.cloudServer+"/api/v1/events/"+str(self.cloudEventID)
             Logger.info("about to send request to "+uri)
             j=json.dumps(d)
@@ -1589,6 +1685,7 @@ class signinApp(App):
                 on_success=self.on_getCloudEvents_success,
                 on_failure=self.on_getCloudEvents_error,
                 on_error=self.on_getCloudEvents_error,
+                req_headers={'Authorization':'Bearer '+self.signin_api_key},
                 timeout=3,
                 method="GET",
                 debug=True)
@@ -1882,7 +1979,8 @@ class signinApp(App):
             request=UrlRequest(self.cloudServer+"/api/v1/events/"+str(self.cloudEventID),
                     on_success=self.on_syncToCloud_success,
                     on_failure=self.on_syncToCloud_error,
-                    on_error=self.on_syncToCloud_error)
+                    on_error=self.on_syncToCloud_error,
+                    req_headers={'Authorization':'Bearer '+self.signin_api_key})
             Logger.info("asynchronous request sent to "+str(request.url))
             self.topbar.ids.syncButtonImage.source=self.syncCloudDownloadStartIconFileName
         else:
@@ -2136,8 +2234,7 @@ class signinApp(App):
                 name=self.getName(id)
                 # temporary hardcodes 8-16-19
                 agency="NCSSAR"
-#                 cellNum=self.getCell(id)
-                cellNum="123-456-7890" # use fake numbers for security while db is public on the web
+                cellNum=self.getCell(id)
                 status="SignedIn"
                 idText=self.getIdText(id)
 #                 self.sm.current='signintype'

@@ -25,6 +25,7 @@
 # #############################################################################
 
 import sqlite3
+import json
 import time
 
 EVENTS_COLS=[
@@ -206,6 +207,20 @@ def sdbGetEventHTML(eventID):
     html+="</body></html>"
     return html
 
+# note, sdbGetRoster will probably only be run on the server to handle api requests
+#  but is placed in this file which is common to server and clients
+def sdbGetRoster(writeFile=False):
+    print("sdbGetRoster called")
+    tableName="roster"
+    roster_date=q("SELECT roster_date FROM dbInfo")[0]["roster_date"] # string
+    print("roster date = "+str(roster_date))
+    roster=q("SELECT * FROM "+tableName) # list of dictionaries
+    rval={'roster_date':roster_date,'roster':roster}
+    if writeFile:
+        with open('roster.json','w') as outFile:
+            json.dump(rval,outFile)
+    return rval
+        
 def sdbUpdateLastEditEpoch(eventID):
     query="UPDATE 'Events' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE LocalEventID = "+str(eventID)+";"
     r=q(query)
