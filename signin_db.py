@@ -162,6 +162,15 @@ def sdbSetCloudEventID(localEventID,cloudEventID):
             cloudEventID=cloudEventID,
             localEventID=localEventID))
 
+# sdbGetD4HID - return the D4H activity ID of a specified event in the signin database;
+#  will search for local event IDs by default since this will probably be called on
+#  the server; if called from a client, make sure to specify eventKey="CloudEventID"
+def sdbGetD4HID(eventID,eventKey="LocalEventID"):
+    condition=eventKey+"="+str(eventID)
+    event=q("SELECT * FROM Events WHERE {condition};".format(
+            condition=condition))
+    return q["D4HID"]
+
 # sdbHome - return a welcome message to verify that this code is running
 def sdbHome():
     return '''<h1>SignIn Database API</h1>
@@ -171,12 +180,16 @@ def sdbHome():
 #  lastEditSince [0] - only return events whose LastEditEpoch is greater than this value
 #  eventStartSince [0] - only return events whose EventStartEpoch is greater than this value
 #  nonFinalizedOnly [False] - if True, only return events whose Finalized value is 0
+#  eventID [None] - if specified, ignore all other arguments and just return the specified event record
 #  return - list of matching record(s)
-def sdbGetEvents(lastEditSince=0,eventStartSince=0,nonFinalizedOnly=False):
+def sdbGetEvents(lastEditSince=0,eventStartSince=0,nonFinalizedOnly=False,eventID=None):
     print("sdbGetEvents called: lastEditedSince="+str(lastEditSince)+"  eventStartSince="+str(eventStartSince)+"  nonFinalizedOnly="+str(nonFinalizedOnly))
     createEventsTableIfNeeded()
-    condition="EventStartEpoch > '{eventStartSince}' AND LastEditEpoch > '{lastEditSince}'".format(
-        eventStartSince=eventStartSince,lastEditSince=lastEditSince)
+    if eventID:
+        condition="LocalEventID="+str(eventID)
+    else:
+        condition="EventStartEpoch > '{eventStartSince}' AND LastEditEpoch > '{lastEditSince}'".format(
+            eventStartSince=eventStartSince,lastEditSince=lastEditSince)
     if nonFinalizedOnly:
         condition+=" AND Finalized = 0"
     return q("SELECT * FROM 'Events' WHERE {condition};".format(
@@ -186,7 +199,7 @@ def sdbGetEvent(eventID):
     tableName=str(eventID)+"_SignIn"
     all=q("SELECT * FROM '"+tableName+"';")
     return all
-
+    
 def sdbGetEventHTML(eventID):
     tableName=str(eventID)+"_SignIn"
     all=q('SELECT * FROM '+tableName+';')

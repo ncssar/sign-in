@@ -213,7 +213,8 @@ class signinApp(App):
             self.downloadDir="/storage/emulated/0/Download"
             self.csvDir=os.path.dirname(os.path.abspath(__file__))
 #             self.rosterDir=self.csvDir # need to get permision to read local files, then use a file browser
-            self.rosterDir=self.downloadDir # TO DO: implement a dir search tree
+#             self.rosterDir=self.downloadDir # TO DO: implement a dir search tree
+            self.rosterDir='.' # make sure to keep it in the app dir for security
         self.rosterFileBaseName=self.rosterDir+"/roster"
         self.rosterFileName=os.path.join(self.rosterDir,"roster.csv")
         self.csvFileName=os.path.join(self.csvDir,"sign-in.csv")
@@ -330,6 +331,8 @@ class signinApp(App):
 # #                 "Status TEXT)")
 
     def getAPIKeys(self):
+        self.d4h_api_key="NONE"
+        self.signin_api_key="NONE"
         if platform in ('windows'):
             self.signin_api_key=os.getenv('SIGNIN_API_KEY')
             if self.signin_api_key==None:
@@ -348,7 +351,20 @@ class signinApp(App):
             else:
                 # security: don't write the key to the log file which can be copied to a different machine
                 Logger.info("D4H API key read successfully.")
-                
+
+        elif platform in ('android'):
+            # don't send keys.json with the apk; install it separately by some means
+#             try:
+            with open('./keys.json','r',errors='ignore') as keyFile:
+                data=json.load(keyFile)
+                Logger.info("keys.json read:"+str(data))
+                self.testKey=data["testKey"]
+                Logger.info("testKey extracted as "+str(self.testKey))
+                self.signin_api_key=data["signin_api_key"]
+                self.d4h_api_key=data["d4h_api_key"]
+#             except:
+#                 Logger.error("Could not load keys")
+                        
             
     # restart: called from GUI; disallow auto-recover - show all choices
     def restart(self,*args):
@@ -780,7 +796,7 @@ class signinApp(App):
 
     def on_roster_success(self,request,result):
         Logger.info("on_roster_success called")
-        rosterFileName="roster.json"
+        rosterFileName=self.rosterFileBaseName+".json"
         with open(rosterFileName,'w') as outFile:
             json.dump(result,outFile)
             Logger.info("  roster saved to "+rosterFileName)
@@ -1666,7 +1682,7 @@ class signinApp(App):
     # must jump through these hoops to call the parts in sequence, since UrlRequest
     #  cannot be made syncronous (the wait() function hangs for error or failure)                    
     def buildSyncChoicesList(self):
-        backDays=0.5
+        backDays=2
         aheadDays=2
         t=time.time() # current epoch seconds
         
