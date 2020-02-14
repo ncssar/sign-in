@@ -702,6 +702,7 @@ class signinApp(App):
         self.roster={}
         if format is 'json':
             rosterFileName=self.rosterFileBaseName+".json"
+            # 1. read the roster from the cloud if connected and write to local json file
             if self.cloud:
                 Logger.info("Requesting roster from cloud server...")
                 request=UrlRequest(self.cloudServer+"/api/v1/roster",
@@ -712,6 +713,7 @@ class signinApp(App):
                     timeout=5,
                     method="GET",
                     debug=True)
+            # 2. read the roster from the local json file
             try:
                 Logger.info("reading json roster file:"+rosterFileName)
                 # on android, default encoding (utf-8) resulted in failure to read roster
@@ -744,7 +746,7 @@ class signinApp(App):
                         #  code as of 2-1-20, translate it to a comma-delimited string for now:
 #                         self.roster[id]=[entry["name"],entry["rsour"],entry["cell"]]
                         resourceString=','.join(eval(entry["rsour"]))
-                        self.roster[id]=[entry["name"],resourceString,entry["cell"]]
+                        self.roster[id]=[entry["name"],resourceString,entry["cell"],entry["d4h_id"]]
                         Logger.info("adding "+str(id)+" : "+str(self.roster[id])+"  resources="+entry['rsour']+"-->"+resourceString)
                     self.details.ids.rosterStatusLabel.text=str(len(self.roster))+" roster entries have been loaded."
             except Exception as e:
@@ -841,6 +843,9 @@ class signinApp(App):
     
     def getCell(self,id):
         return self.roster.get(id,"")[2]
+    
+    def getD4HMemberID(self,id):
+        return int(self.roster.get(id,0)[3])
     
     def getId(self,name):
         Logger.info("looking up ID for "+name)
@@ -2253,6 +2258,7 @@ class signinApp(App):
                 cellNum=self.getCell(id)
                 status="SignedIn"
                 idText=self.getIdText(id)
+                d4hmid=self.getD4HMemberID(id)
 #                 self.sm.current='signintype'
                 t=round(time.time(),2) # round to hundredth of a second to aid database comparison
                 # get the list of on/enabled ready-to-deploy-as switches
@@ -2266,7 +2272,7 @@ class signinApp(App):
                 if self.details.eventType=="Search":
                     s+="and is ready to deploy as "+str(certs)
                 Logger.info(s)
-                entry=[id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0.0,0.0,cellNum,status,'']
+                entry=[id,name,agency,','.join(certs),self.timeStr(t),"--","--",t,0.0,0.0,cellNum,status,'',d4hmid,'']
                 self.signInList.append(entry)
                 self.sendAction(entry)
                 self.thankyou.ids.statusLabel.text="Signed in at "+self.timeStr(t)
