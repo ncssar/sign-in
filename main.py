@@ -3,9 +3,7 @@
 #  main.py - main entry point for sign-in app
 #
 #  sign-in is developed for Nevada County Sheriff's Search and Rescue
-#    Copyright (c) 2019 Tom Grundy
-#
-#   sign-in (c) 2019 Tom Grundy, using kivy and buildozer
+#    Copyright (c) 2020 Tom Grundy
 #
 #  http://github.com/ncssar/sign-in
 #
@@ -623,11 +621,24 @@ class signinApp(App):
         c=self.lookup.ids.combo
         c.focus=True
         c.drop_down.open(c)
-    
+        # return to keypad screen after specified number of seconds of inactivity
+        self.lookupInactivityTimer=0
+        self.lookupInactivityTimeout=5
+        self.lookupInactivityTimerObj=Clock.schedule_interval(self.lookupInactivityCheck,1)
+
+    def lookupInactivityCheck(self,*args):
+        Logger.info("lookup inactivity timer:"+str(self.lookupInactivityTimer))
+        if(self.lookupInactivityTimer>=self.lookupInactivityTimeout):
+            Logger.info("lookup inactivity period exceeded; returning to keypad")
+            self.sm.transition.direction='right'
+            self.sm.current='keypad'
+        self.lookupInactivityTimer+=1
+            
     def lookupLeave(self):
         Logger.info("lookupLeave called")
         self.lookup.ids.combo.text='' # for some reason this doesn't call on_options
         self.lookup.ids.combo.options=[] # so call it specifically
+        self.lookupInactivityTimerObj.cancel()
         
     def exitAdminMode(self):
         Logger.info("Exiting admin mode")
@@ -1905,6 +1916,11 @@ class signinApp(App):
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
         popup=PopupWithIcons(title='Sync Choices      [wifi='+self.ssid+']',content=box,size_hint=(0.8,min(0.9,0.2+(0.2*len(choices)))))
+#         popup=PopupWithIcons(
+#                 title='Sync Choices      [wifi='+self.ssid+']',
+#                 content=box,
+#                 size_hint=(0.8,min(0.9,0.2+(0.2*len(choices)))),
+#                 background_color=(0.6,0,0,0.5))
         if len(choices)>0:
             box.add_widget(Label(text='Join an existing event:',height=30,size_hint_y=None))
             buttons=[]
