@@ -639,6 +639,8 @@ class signinApp(App):
         self.lookup.ids.combo.text='' # for some reason this doesn't call on_options
         self.lookup.ids.combo.options=[] # so call it specifically
         self.lookupInactivityTimerObj.cancel()
+        self.typed=""
+        self.show()
         
     def exitAdminMode(self):
         Logger.info("Exiting admin mode")
@@ -2126,6 +2128,7 @@ class signinApp(App):
     
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
+        self.lookupInactivityTimer=0
         if len(text)<3: # number or code; it must be from the keypad
             # process the button text
             if text=='bs':
