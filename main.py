@@ -234,6 +234,7 @@ class signinApp(App):
 #         self.sm.add_widget(SignInTypeScreen(name='signintype'))
         self.sm.add_widget(SignOutScreen(name='signout'))
         self.sm.add_widget(AlreadySignedOutScreen(name='alreadysignedout'))
+        self.sm.add_widget(TimeoutScreen(name='timeout'))
         self.sm.add_widget(ThankyouScreen(name='thankyou'))
         self.sm.add_widget(ListScreen(name='theList'))
         self.sm.add_widget(LookupScreen(name='lookup'))
@@ -244,6 +245,7 @@ class signinApp(App):
 #         self.signintype=self.sm.get_screen('signintype')
         self.signout=self.sm.get_screen('signout')
         self.alreadysignedout=self.sm.get_screen('alreadysignedout')
+        self.timeout=self.sm.get_screen('timeout')
         self.thankyou=self.sm.get_screen('thankyou')
         self.theList=self.sm.get_screen('theList')
         self.lookup=self.sm.get_screen('lookup')
@@ -251,6 +253,12 @@ class signinApp(App):
         # auto-blank the lookup text and results when the screen is changed
         self.lookup.on_enter=self.lookupEnter
         self.lookup.on_leave=self.lookupLeave
+        self.signin.on_enter=self.signinEnter
+        self.signin.on_leave=self.signinLeave
+        self.signout.on_enter=self.signoutEnter
+        self.signout.on_leave=self.signoutLeave
+        self.alreadysignedout.on_enter=self.alreadysignedoutEnter
+        self.alreadysignedout.on_leave=self.alreadysignedoutLeave
         self.newevent=self.sm.get_screen('newevent')
         self.details=self.sm.get_screen('details')
 #         self.keypad.on_enter=self.setKeepScreenOn()
@@ -260,6 +268,7 @@ class signinApp(App):
 #         self.exitAdminMode()
         self.enterAdminMode()
         self.typed=''
+        self.flashState=False
         self.finalized=False
         self.details.rosterFileName=self.rosterFileName
         self.startTime=round(time.time(),2) # round to hundredth of a second to aid database comparison 
@@ -355,9 +364,9 @@ class signinApp(App):
 #             try:
             with open('./keys.json','r',errors='ignore') as keyFile:
                 data=json.load(keyFile)
-                Logger.info("keys.json read:"+str(data))
-                self.testKey=data["testKey"]
-                Logger.info("testKey extracted as "+str(self.testKey))
+#                 Logger.info("keys.json read:"+str(data))
+#                 self.testKey=data["testKey"]
+#                 Logger.info("testKey extracted as "+str(self.testKey))
                 self.signin_api_key=data["signin_api_key"]
                 self.d4h_api_key=data["d4h_api_key"]
 #             except:
@@ -371,8 +380,12 @@ class signinApp(App):
     def check_connectivity(self):
         self.ssid="None"
         if platform=='android':
-#             activeNetwork=con_mgr.getActiveNetwork()
-#             Logger.info("Active network:"+str(activeNetwork.toString()))
+            # in order to get the SSID, in Android 9+, ACCESS_COARSE_LOCATION
+            #  permission in needed, and in Android 10, ACCESS_FILE_LOCATION
+            #  is needed; they need to be in buildozer.spec, and until/unless
+            #  the app is made to request permission through the GUI, location
+            #  permission will have to be added through the android settings GUI
+            #  after each install; but, it's not strictly critical to show the SSID.
             self.ssid=wifi_mgr.getConnectionInfo().getSSID()
             if self.ssid=="<unknown ssid>":
                 self.ssid="None" # should probably check to see if mobile data or other connection
@@ -474,11 +487,31 @@ class signinApp(App):
                 debug=True)
 #         request.wait()
     
+    
+# connection issues: we want to see this type of transcript:    
+# [INFO   ] calling checkForCloud
+# [INFO   ] ComboEdit.on_text called:<__main__.ComboEdit object at 0xc964e490>:
+# [INFO   ] ComboEdit.on_options called:<__main__.ComboEdit object at 0xc964e490>:[]
+# [INFO   ] options:[]
+# [INFO   ] on_checkForCloud_success called: response=<h1>SignIn Database API</h1>
+# <p>API for interacting with the sign-in databases</p>
+# [INFO   ]   valid response detected; cloud connection established.
+# [INFO   ] Requesting roster from cloud server...
+# [INFO   ] on_roster_success called
+# [INFO   ]   roster saved to ./roster.json
+# [INFO   ] reading json roster file:./roster.json
+# [INFO   ] opened...
+
+# apparently, without Clock.tick() at the end of the success handler,
+#  the roster loader doesn't think self.cloud is True yet, therefore it doesn't
+#  request the latest roster from the cloud
+
     def on_checkForCloud_success(self,request,result):
         Logger.info("on_checkForCloud_success called: response="+str(result))
         if 'SignIn Database API' in str(result):
             Logger.info("  valid response detected; cloud connection established.")
             self.cloud=True
+            Clock.tick() # to make sure the status is immediately available
 #         self.checksComplete+=1
 #         self.startup_part2()
     
@@ -510,6 +543,7 @@ class signinApp(App):
             self.d4h=True
             # get the team account timezone offset
             self.d4h_timezone_offset=result["data"]["timezone"]["offset"]
+            Clock.tick() # to make sure the status is immediately available
 #         self.checksComplete+=1
 #         self.startup_part2()
     
@@ -622,25 +656,118 @@ class signinApp(App):
         c.focus=True
         c.drop_down.open(c)
         # return to keypad screen after specified number of seconds of inactivity
-        self.lookupInactivityTimer=0
+        self.inactivityTimer=0
         self.lookupInactivityTimeout=5
         self.lookupInactivityTimerObj=Clock.schedule_interval(self.lookupInactivityCheck,1)
 
     def lookupInactivityCheck(self,*args):
-        Logger.info("lookup inactivity timer:"+str(self.lookupInactivityTimer))
-        if(self.lookupInactivityTimer>=self.lookupInactivityTimeout):
+        Logger.info("lookup inactivity timer:"+str(self.inactivityTimer))
+        if self.inactivityTimer>=self.lookupInactivityTimeout:
             Logger.info("lookup inactivity period exceeded; returning to keypad")
-            self.sm.transition.direction='right'
-            self.sm.current='keypad'
-        self.lookupInactivityTimer+=1
+            self.switchToBlankKeypad()
+        self.inactivityTimer+=1
             
     def lookupLeave(self):
         Logger.info("lookupLeave called")
         self.lookup.ids.combo.text='' # for some reason this doesn't call on_options
         self.lookup.ids.combo.options=[] # so call it specifically
         self.lookupInactivityTimerObj.cancel()
-        self.typed=""
-        self.show()
+        
+    def signinEnter(self):
+        Logger.info("signinEnter called")
+        # fit the text again after the transition is done, since the widget
+        #  size (and therefore the text height) is wacky until the screen has
+        #  been displayed for the first time
+        self.signInNameTextUpdate()
+        # return to keypad screen after specified number of seconds of inactivity
+        self.inactivityTimer=0
+        self.signinInactivityStartFlashing=2
+        self.signinInactivityTimeout=5
+        self.signinInactivityTimerObj=Clock.schedule_interval(self.signinInactivityCheck,1)
+
+    def signinInactivityCheck(self,*args):
+        Logger.info("signin inactivity timer:"+str(self.inactivityTimer))
+        if self.inactivityTimer==self.signinInactivityStartFlashing:
+            self.startFlashing()
+        if self.inactivityTimer>=self.signinInactivityTimeout:
+            self.inactivityTimeout()
+        self.inactivityTimer+=1
+            
+    def signinLeave(self):
+        Logger.info("signinLeave called")
+        self.signinInactivityTimerObj.cancel()
+
+    def signoutEnter(self):
+        Logger.info("signoutEnter called")
+        # fit the text again after the transition is done, since the widget
+        #  size (and therefore the text height) is wacky until the screen has
+        #  been displayed for the first time
+        self.signOutNameTextUpdate()
+        # return to keypad screen after specified number of seconds of inactivity
+        self.inactivityTimer=0
+        self.signoutInactivityStartFlashing=2
+        self.signoutInactivityTimeout=5
+        self.signoutInactivityTimerObj=Clock.schedule_interval(self.signoutInactivityCheck,1)
+
+    def signoutInactivityCheck(self,*args):
+        Logger.info("signout inactivity timer:"+str(self.inactivityTimer))
+        if self.inactivityTimer==self.signoutInactivityStartFlashing:
+            self.startFlashing()
+        if self.inactivityTimer>=self.signoutInactivityTimeout:
+            self.inactivityTimeout()
+        self.inactivityTimer+=1
+            
+    def signoutLeave(self):
+        Logger.info("signoutLeave called")
+        self.signoutInactivityTimerObj.cancel()
+    
+    def alreadysignedoutEnter(self):
+        Logger.info("signoutEnter called")
+        # fit the text again after the transition is done, since the widget
+        #  size (and therefore the text height) is wacky until the screen has
+        #  been displayed for the first time
+        self.alreadySignedOutNameTextUpdate()
+        # return to keypad screen after specified number of seconds of inactivity
+        self.inactivityTimer=0
+        self.alreadySignedOutInactivityStartFlashing=6 # give a bit more time to read the options
+        self.alreadySignedOutInactivityTimeout=9
+        self.alreadySignedOutInactivityTimerObj=Clock.schedule_interval(self.alreadysignedoutInactivityCheck,1)
+
+    def alreadysignedoutInactivityCheck(self,*args):
+        Logger.info("alreadysignedout inactivity timer:"+str(self.inactivityTimer))
+        if self.inactivityTimer==self.alreadySignedOutInactivityStartFlashing:
+            self.startFlashing()
+        if self.inactivityTimer>=self.alreadySignedOutInactivityTimeout:
+            self.inactivityTimeout()
+        self.inactivityTimer+=1
+            
+    def alreadysignedoutLeave(self):
+        Logger.info("alreadysignedoutLeave called")
+        self.alreadySignedOutInactivityTimerObj.cancel()
+
+    def inactivityTimeout(self,*args):
+        self.stopFlashing()
+        self.sm.current='timeout'
+        Clock.schedule_once(self.switchToBlankKeypad,2)
+        
+    def startFlashing(self,*args):
+        self.flashTimerObj=Clock.schedule_interval(self.flash,0.25)
+        
+    def stopFlashing(self,*args):
+        self.flashState=True
+        self.flash() # make sure it is left in the clear state
+        try:
+            self.flashTimerObj.cancel()
+        except:
+            pass
+        
+    def flash(self,*args):
+#         Logger.info("flash "+str(self.flashState))
+        self.flashState=not self.flashState
+        if self.flashState:
+            self.sm.current_screen.background_color=(0.5,0,0,1)
+        else:
+            self.sm.current_screen.background_color=(0,0,0,1)
         
     def exitAdminMode(self):
         Logger.info("Exiting admin mode")
@@ -815,6 +942,7 @@ class signinApp(App):
         with open(rosterFileName,'w') as outFile:
             json.dump(result,outFile)
             Logger.info("  roster saved to "+rosterFileName)
+        Clock.tick() # to make sure the status is immediately available
     
     def on_roster_error(self,request,result):  
         Logger.info("on_roster_error called:")
@@ -1492,10 +1620,7 @@ class signinApp(App):
     def showSignIn(self,id,fromLookup=False):
         self.sm.current='signin'
         self.setTextToFit(self.signin.ids.nameLabel,self.getName(id))
-        # fit the text again after the transition is done, since the widget
-        #  size (and therefore the text height) is wacky until the screen has
-        #  been displayed for the first time
-        self.signin.on_enter=self.signInNameTextUpdate
+
         self.signin.ids.idLabel.text=self.getIdText(id)
         self.signin.fromLookup=fromLookup
         certsNeedPrompt=self.getCerts(id)[1]
@@ -1621,10 +1746,11 @@ class signinApp(App):
 #         self.updateSyncLabel(" OK")
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
         
+        Clock.tick() # to make sure the status is immediately available
+        
         # now set the 'Synced' column on the local db to indicate successful sync
         d["Synced"]=self.cloudEventID
         sdbAddOrUpdate(self.localEventID,d)
-        
         # do a new sync in case anything changed on the server from other nodes
         self.sync()
         
@@ -1664,6 +1790,9 @@ class signinApp(App):
 #             Logger.info("response error: data record returned from PUT request is not equal to the pushed data:\n    pushed:"+str(d)+"\n  response:"+str(v[0]))
 #             return -1
         Logger.info("new cloud event response has been validated.  New cloud event ID = "+str(self.cloudEventID))
+        
+        Clock.tick() # to make sure the status is immediately available
+        
         if self.localEventID: # localEventID will not exist yet if cloud event is being made first from newEvent
             sdbSetCloudEventID(self.localEventID,self.cloudEventID)
 #         self.updateSyncLabel(" OK")
@@ -1806,6 +1935,8 @@ class signinApp(App):
                 cloudChoicesToAddToSyncChoices.append(cloudChoice)
         self.syncChoicesList.extend(cloudChoicesToAddToSyncChoices)
         
+        Clock.tick() # to make sure the status is immediately available
+        
 #         self.showStartupSyncChoices_part2()
 #         self.syncChoicesPopup()
 
@@ -1845,6 +1976,9 @@ class signinApp(App):
                         "LocalEventID":None,
                         "CloudEventID":None,
                         "D4HID":activity["id"]}) # D4H ref_autoid value is a string and is not guaranteed to be unique
+        
+        Clock.tick() # to make sure the status is immediately available
+        
 #             self.syncChoicesList.append(choice)
 #             
 # #         localSyncChoices=sdbGetEvents(lastEditSince=time.time()-60*60*24*10)
@@ -2067,6 +2201,8 @@ class signinApp(App):
 #                 self.signInList.append(entry)
         self.loadFromDB(result)
         self.topbar.ids.syncButtonImage.source=self.syncCloudIconFileName
+        
+        Clock.tick() # to make sure the status is immediately available
 #         self.updateHeaderCount()
 
 #     def on_sync_failure(self,request,result):
@@ -2128,7 +2264,7 @@ class signinApp(App):
     
     def keyDown(self,text,fromLookup=False):
         Logger.info("keyDown: text="+text)
-        self.lookupInactivityTimer=0
+        self.inactivityTimer=0
         if len(text)<3: # number or code; it must be from the keypad
             # process the button text
             if text=='bs':
@@ -2189,6 +2325,7 @@ class signinApp(App):
         elif text=="Admin Mode":
             self.exitAdminMode()
         elif text=='Back':
+            self.stopFlashing() # do this before switching to any other screen
             self.sm.transition.direction='right'
             if self.sm.current_screen.fromLookup:
                 self.sm.current='lookup'
@@ -2240,10 +2377,6 @@ class signinApp(App):
 #                     self.sm.current='signin'
                 elif entry[8]==0: # signed in but not signed out
                     self.setTextToFit(self.signout.ids.nameLabel,self.getName(id))
-                    # fit the text again after the transition is done, since the widget
-                    #  size (and therefore the text height) is wacky until the screen has
-                    #  been displayed for the first time
-                    self.signout.on_enter=self.signOutNameTextUpdate
                     self.signout.ids.idLabel.text=self.getIdText(id)
                     self.signout.ids.statusLabel.text="Signed in at "+self.timeStr(entry[4])
                     self.signout.fromLookup=fromLookup
@@ -2254,10 +2387,6 @@ class signinApp(App):
                         text=text+"In: "+self.timeStr(self.signInList[k][5])+"   Out: "+self.timeStr(self.signInList[k][6])+"   Total: "+self.timeStr(self.signInList[k][7])+"\n"
 #                     self.alreadysignedout.ids.nameLabel.text=self.getName(id)
                     self.setTextToFit(self.alreadysignedout.ids.nameLabel,self.getName(id))
-                    # fit the text again after the transition is done, since the widget
-                    #  size (and therefore the text height) is wacky until the screen has
-                    #  been displayed for the first time
-                    self.alreadysignedout.on_enter=self.alreadySignedOutNameTextUpdate
                     self.alreadysignedout.ids.idLabel.text=self.getIdText(id)
                     self.alreadysignedout.fromLookup=fromLookup
                     self.alreadysignedout.ids.statusLabel.text="You are already signed out:\n"+text
@@ -2392,6 +2521,7 @@ class signinApp(App):
         
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
 
+
 # prevent keyboard on selection by getting rid of FocusBehavior from inheritance list
 class SelectableRecycleGridLayout(LayoutSelectionBehavior,
                                   RecycleGridLayout):
@@ -2400,8 +2530,10 @@ class SelectableRecycleGridLayout(LayoutSelectionBehavior,
 # class ButtonWithImage(Button):
 #     pass
 
+
 class ButtonWithFourImages(Button):
     pass
+
 
 class SelectableLabel(RecycleDataViewBehavior, Label):
     ''' Add selection support to the Label '''
@@ -2457,27 +2589,39 @@ class ClockText(Label):
     def update(self,*args):
         self.text=time.strftime('%H:%M')
 
+
 class TopBar(BoxLayout):
     pass
+
 
 class YesNoSwitch(Switch):
     pass
 
+
 class KeypadScreen(Screen):
     pass
 
+
 class SignInScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
+    background_color=ListProperty([0,0,0,0])
 
 # class SignInTypeScreen(Screen):
 #     pass
 
+
 class SignOutScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
+    background_color=ListProperty([0,0,0,0])
 
 
 class AlreadySignedOutScreen(Screen):
     fromLookup=BooleanProperty(False) # so that 'back' will go to lookup screen
+    background_color=ListProperty([0,0,0,0])
+
+
+class TimeoutScreen(Screen):
+    pass
 
 
 class ThankyouScreen(Screen):

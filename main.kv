@@ -380,6 +380,12 @@
                 text: 'V'        
                        
 <SignInScreen>:
+    canvas:
+        Color:
+            rgba: self.background_color
+        Rectangle:
+            pos:self.pos
+            size:self.size
     BoxLayout:
         orientation: 'vertical'
         Label:
@@ -455,6 +461,12 @@
 #                 multiselect: False
               
 <SignOutScreen>:
+    canvas:
+        Color:
+            rgba: self.background_color
+        Rectangle:
+            pos:self.pos
+            size:self.size
     BoxLayout:
         orientation: 'vertical'
         Label:
@@ -483,6 +495,12 @@
             text: 'Back'
             
 <AlreadySignedOutScreen>:
+    canvas:
+        Color:
+            rgba: self.background_color
+        Rectangle:
+            pos:self.pos
+            size:self.size
     BoxLayout:
         orientation: 'vertical'
         Label:
@@ -507,7 +525,19 @@
             text: 'Sign In Again'
         MyButton:
             text: 'Back'
-            
+
+<TimeoutScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            font_size: self.height*app.defaultTextHeightMultiplier*1/4
+            halign: 'center'
+            text: 'Timed Out'
+        Label:
+            font_size: self.height*app.defaultTextHeightMultiplier*1/6
+            halign: 'center'
+            text: 'No Action Taken'
+                       
 <ThankyouScreen>:
     BoxLayout:
         orientation: 'vertical'
