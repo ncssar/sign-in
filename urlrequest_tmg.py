@@ -487,9 +487,12 @@ class UrlRequest(Thread):
 
                 if status_class in (1, 2):
                     if self._debug:
+                        l=0
+                        if data:
+                            l=len(data)
                         Logger.debug('UrlRequest: {0} Download finished with'
                                      ' {1} datalen'.format(id(self),
-                                                           len(data)))
+                                                           l))
                     self._is_finished = True
                     self._result = data
                     if self.on_success:

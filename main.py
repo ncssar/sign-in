@@ -664,6 +664,7 @@ class signinApp(App):
         Logger.info("lookup inactivity timer:"+str(self.inactivityTimer))
         if self.inactivityTimer>=self.lookupInactivityTimeout:
             Logger.info("lookup inactivity period exceeded; returning to keypad")
+            Window.release_all_keyboards()
             self.switchToBlankKeypad()
         self.inactivityTimer+=1
             
@@ -1220,11 +1221,62 @@ class signinApp(App):
             if os.path.isfile(name1):
                 shutil.move(name1,name2) # shutil.move will overwrite; os.rename will not
         shutil.move(self.csvFileName,name1)
-                
-    def finalize(self):
-        self.finalized=True # should make sure that everyone is signed out first!
-        self.export()
     
+    # finalize workflow:
+    # when 'finalize' is pressed on a node:
+    #   - set the local finalized flag (self.finalized=True)
+    #   - if cloud is connected, send the finalize request to the cloud server
+    #        (use the cloud event ID; let the cloud determine if it is a d4h activity)
+    # on the cloud server:
+    #   - set the database event to finalized
+    #   - if it is a d4h activity, and d4h is connected to the cloud server,
+    #        bulk push attendance records to d4h
+    #       note that this request should return after a few seconds, since it
+    #        builds the request list and starts it in a separate thread
+    def finalize(self):
+        Logger.info("Finalize called at "+datetime.datetime.now().isoformat())
+        self.finalized=True # should make sure that everyone is signed out first!
+        if self.cloudEventID and self.cloud:
+            self.finalizePopup=self.textpopup(
+                    title='Finalize',
+                    text='Request sent to cloud; this may take up to a minute...',
+                    buttonText='Close',
+                    size_hint=(0.8,0.5))
+            headers={'Content-type': 'application/json','Accept': 'text/plain','Authorization':'Bearer '+self.signin_api_key}
+            request=UrlRequest(self.cloudServer+"/api/v1/finalize/"+str(self.cloudEventID),
+                    on_success=self.on_cloudFinalize_success,
+                    on_failure=self.on_cloudFinalize_error,
+                    on_error=self.on_cloudFinalize_error,
+                    req_headers=headers,
+                    method="POST",
+                    debug=True)
+#         self.export()
+    
+    def on_cloudFinalize_success(self,request,response):
+        Logger.info("on_cloudFinalize_success called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(response))
+        label=[x for x in self.finalizePopup.content.children if x.__class__.__name__=="Label"][0]
+        label.text+="\n\nSuccess.  Response from cloud server:\n"+str(response["message"]["summary"])
+#         self.finalizePopup.content.ids.theLabel.text+="\n\nSuccess!"
+#         self.finalizePopup.content.add_widget(Label(text="Success!"))
+        
+    def on_cloudFinalize_error(self,request,response):
+        Logger.info("on_cloudFinalize_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(response))
+        label=[x for x in self.finalizePopup.content.children if x.__class__.__name__=="Label"][0]
+        if 'something went wrong' in response:
+            response="Unknown server error; please check the error logs."
+        label.text+="\n\nFailed.  Response from cloud server:\n"+str(response)
+#         self.finalizePopup.content.ids.theLabel.text+="\n\nFailed."
+#         self.finalizePopup.content.children[0].text+="\n\nFailed."
+#         self.finalizePopup.content.add_widget(Label(text="Failed."))
+        
     def export(self):
         # exporting should not cause a file rotation; if it did, then the most
         #  recent backup woult be the same as the most recent file except with
@@ -2051,7 +2103,13 @@ class signinApp(App):
         choices=choices or self.syncChoicesList
         Logger.info("syncChoicesPopup called; choices="+str(choices))
         box=BoxLayout(orientation='vertical')
-        popup=PopupWithIcons(title='Sync Choices      [wifi='+self.ssid+']',content=box,size_hint=(0.8,min(0.9,0.2+(0.2*len(choices)))))
+        popup=PopupWithIcons(
+                title='Sync Choices      [wifi='+self.ssid+']',
+                content=box,
+                size_hint=(0.8,min(0.9,0.2+(0.2*len(choices)))),
+                background_color=(0,0,0,1))
+        if not self.cloud:
+            popup.background_color=(0.6,0,0,1)
 #         popup=PopupWithIcons(
 #                 title='Sync Choices      [wifi='+self.ssid+']',
 #                 content=box,
@@ -2478,7 +2536,7 @@ class signinApp(App):
     def on_request_close(self, *args, **kwargs):
         Logger.info("on_request_close called")
         if self.adminMode:
-            self.textpopup(title='Exit', text='Are you sure?', buttonText='Yes', size_hint=(0.5,0.2))
+            self.textpopup(title='Exit', text='Are you sure?', buttonText='Yes', on_release=self.stop, size_hint=(0.5,0.2))
             return True
         else:
             return True
@@ -2507,11 +2565,12 @@ class signinApp(App):
             box.add_widget(mybutton)
 #         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
         popup = Popup(title=title, content=box, size_hint=size_hint)
-        if not on_release:
-            on_release=self.stop
+#         if not on_release:
+#             on_release=self.stop
         if buttonText is not None:
             mybutton.bind(on_release=popup.dismiss)
-            mybutton.bind(on_release=on_release)
+            if on_release:
+                mybutton.bind(on_release=on_release)
         popup.open()
         return popup # so that the calling code cand close the popup
 # 

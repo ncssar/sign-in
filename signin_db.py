@@ -5,7 +5,7 @@
 #     and also by the API code running on the server
 #
 #  sign-in is developed for Nevada County Sheriff's Search and Rescue
-#    Copyright (c) 2019 Tom Grundy
+#    Copyright (c) 2020 Tom Grundy
 #
 #  http://github.com/ncssar/sign-in
 #
@@ -55,7 +55,9 @@ SIGNIN_COLS=[
     ["TotalSec","REAL"],
     ["CellNum","TEXT"],
     ["Status","TEXT"],
-    ["Synced","INTEGER"]]
+    ["Synced","INTEGER"],
+    ["D4HMemberID","INTEGER"],
+    ["D4HAttendanceID","INTEGER"]]
 
 # needed to make query return values dictionaries instead of lists of tuples
 def dict_factory(cursor, row):
